@@ -402,7 +402,11 @@ async function fetchTable(name){
   if(a < 0) throw new Error('bad response');
   const json = JSON.parse(txt.slice(a, b + 1));
   if(json.status === 'error') throw new Error('sheet not found');
-  return {sig: String(json.sig || ''), rows: gvizToRows(json.table)};
+  return {
+    sig:   String(json.sig || ''),
+    heads: (json.table.cols || []).map(c => String(c.label || '').trim()).filter(Boolean),
+    rows:  gvizToRows(json.table),
+  };
 }
 
 // gviz のテーブルを [{列名: {v, f}}] の配列にする
@@ -454,27 +458,54 @@ function pick(row, key){
  */
 const ROLE_ORDER = ['itinerary','settings','members','packing','budget','stay','transport','candidates','info'];
 
+/* 既定シートが「どの役割のシートなのか」を、見出しの顔ぶれから見分けるための特徴。
+ * すべての組がそろって初めて一致とみなします。 */
+const SHEET_SHAPE = {
+  itinerary:  [['日にち','日付','日','date'], ['名称','タイトル','予定','name','title']],
+  settings:   [['項目','キー','設定','item'], ['値','value']],
+  members:    [['名前','氏名','name','メンバー']],
+  packing:    [['品名','持ち物','品目']],
+  budget:     [['項目','名称','内容'], ['金額','費用','予算','cost']],
+  stay:       [['施設名','宿','ホテル','宿泊先']],
+  transport:  [['便名','種別','列車']],
+  candidates: [['名称','候補','スポット','名前'], ['優先度','おすすめ度','エリア']],
+  info:       [['項目'], ['内容','説明']],
+};
+function shapeScore(role, heads){
+  const groups = SHEET_SHAPE[role] || [];
+  const hs = heads.map(norm);
+  if(!groups.length) return 0;
+  return groups.every(g => g.some(w => hs.includes(norm(w)))) ? groups.length : 0;
+}
+
 async function loadAllSheets(){
   let fallback = null;
   try { fallback = await fetchTable('__tabi_probe__' + Date.now()); } catch(e){}
   const fallbackSig = fallback ? fallback.sig : null;
 
-  const found = {}, sawFallback = {};
+  const found = {};
   await Promise.all(ROLE_ORDER.map(async role => {
     for(const name of CONFIG.SHEETS[role]){
       let t;
       try { t = await fetchTable(name); } catch(e){ continue; }
-      if(fallbackSig && t.sig === fallbackSig){ sawFallback[role] = true; continue; }
+      if(fallbackSig && t.sig === fallbackSig) continue;   // そのシートは存在しない
       found[role] = t.rows;
       return;
     }
   }));
 
-  // 既定シートは、優先度がいちばん高い役割ひとつだけが受け取る
+  /* 既定シートの引き取り先を、見出しの形から決める。
+   * 使っていない古いシートが左端に残っていても、
+   * 見出しが合わなければどの役割にも入り込みません。 */
   if(fallback){
-    const claim = ROLE_ORDER.find(r => !found[r] && sawFallback[r])
-               || (!found.itinerary ? 'itinerary' : null);
-    if(claim) found[claim] = fallback.rows;
+    let best = null, bestScore = 0;
+    for(const role of ROLE_ORDER){
+      if(found[role]) continue;
+      const sc = shapeScore(role, fallback.heads);
+      if(sc > bestScore){ bestScore = sc; best = role; }
+    }
+    if(!best && !found.itinerary) best = 'itinerary';   // 見分けがつかないときの受け皿
+    if(best) found[best] = fallback.rows;
   }
   return found;
 }
