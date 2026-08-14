@@ -213,14 +213,40 @@ main{padding:16px 14px 90px;max-width:720px;margin:0 auto}
 .row .v{flex:0 0 auto;font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums;text-align:right}
 .total{display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;padding-top:10px;border-top:2px solid var(--line)}
 .total b{font-size:19px}
-.checkline{display:flex;align-items:center;gap:9px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
-.checkline:first-of-type{border-top:0}
-.checkline .box{
-  flex:0 0 auto;width:21px;height:21px;border-radius:6px;border:2px solid var(--line);
-  display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;font-weight:900;
+/* 持ち物チェック（この端末だけに保存されます） */
+.whobar{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}
+.whochip{
+  padding:6px 14px;border-radius:999px;
+  background:var(--surface);border:1px solid var(--line);
+  font-size:12.5px;font-weight:700;color:var(--text-dim);
 }
+.whochip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.packhead{display:flex;align-items:baseline;gap:9px;margin:0 0 3px}
+.packhead h2{margin:0;flex:1 1 auto}
+.packhead .count{
+  font-size:12.5px;font-weight:800;color:var(--text-dim);
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.packhead .count.all{color:var(--accent)}
+.bar{height:5px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin:0 0 6px}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:99px;transition:width .28s ease}
+.checkline{
+  display:flex;align-items:center;gap:11px;padding:11px 0;
+  border-top:1px solid var(--line);font-size:14.5px;
+  width:100%;text-align:left;font-family:inherit;color:inherit;background:none;
+}
+.checkline:first-of-type{border-top:0}
+.checkline:active{opacity:.55}
+.checkline .box{
+  flex:0 0 auto;width:24px;height:24px;border-radius:7px;border:2px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;font-weight:900;
+  transition:background .15s, border-color .15s;
+}
+.checkline .lbl{flex:1 1 auto;min-width:0;line-height:1.6}
+.checkline .lbl small{color:var(--text-dim);font-weight:600}
 .checkline.done .box{background:var(--accent);border-color:var(--accent)}
-.checkline.done span{text-decoration:line-through;color:var(--text-faint)}
+.checkline.done .lbl{text-decoration:line-through;color:var(--text-faint)}
+.checkline.done .lbl small{color:var(--text-faint);text-decoration:none}
 .callout{
   background:var(--accent-soft);border-radius:var(--radius);
   padding:13px 16px;margin-bottom:14px;
@@ -721,7 +747,11 @@ function coordsOf(it){
 }
 
 /* ================================ 画面描画 ================================= */
-const STATE = { data:null, tab:'plan', day:0, map:null, layer:null };
+const STATE = {
+  data:null, tab:'plan', day:0, map:null, layer:null,
+  // 前回選んだ「誰の持ち物を見るか」を覚えておく
+  who: (() => { try { return localStorage.getItem('tabi:who:' + SHEET_ID) || null; } catch(e){ return null; } })(),
+};
 
 function renderCover(){
   const s = STATE.data.settings || {};
@@ -1120,25 +1150,123 @@ function firstOf(row, keys){
 }
 function allKeys(row){ return Object.keys(row).filter(k => k !== '__raw'); }
 
+/* ===== 持ち物チェック =====
+ * チェックの状態は、その端末のブラウザだけに保存します（localStorage）。
+ * スプレッドシートには書き戻さないので、家族それぞれが自分の端末で
+ * 自由にチェックでき、他の人の画面には影響しません。 */
+const CHECK_KEY = 'tabi:check:' + SHEET_ID;
+const WHO_KEY   = 'tabi:who:'   + SHEET_ID;
+
+function loadChecks(){
+  try { return JSON.parse(localStorage.getItem(CHECK_KEY) || '{}'); } catch(e){ return {}; }
+}
+function saveChecks(o){
+  try { localStorage.setItem(CHECK_KEY, JSON.stringify(o)); } catch(e){}
+}
+
+// 担当ごとにまとめる。同じ担当・同じ品名が複数あっても取り違えないよう連番を付ける
+function packingGroups(){
+  const seen = new Map(), groups = new Map();
+  (STATE.data.packing || []).forEach(r => {
+    const name = firstOf(r, ['品名','持ち物','品目','item','名称']);
+    if(!name) return;
+    const who  = firstOf(r, ['担当','だれ','who','担当者','持つ人']) || 'みんな';
+    const num  = firstOf(r, ['個数','数','qty']);
+    const note = firstOf(r, ['備考','メモ','note']);
+    const base = `${who}|${name}`;
+    const n = (seen.get(base) || 0) + 1;
+    seen.set(base, n);
+    if(!groups.has(who)) groups.set(who, []);
+    groups.get(who).push({ id: n > 1 ? `${base}#${n}` : base, name, num, note });
+  });
+  return groups;
+}
+
 function viewPack(){
   const main = $('#main'); main.innerHTML = '';
-  const rows = STATE.data.packing || [];
-  const p = el('div','panel');
-  p.appendChild(el('h2', null, '🎒 持ち物リスト'));
-  rows.forEach(r => {
-    const nm = firstOf(r, ['品名','持ち物','item','名称','品目']);
-    if(!nm) return;
-    const who = firstOf(r, ['担当','だれ','who','担当者']);
-    const num = firstOf(r, ['個数','数','qty']);
-    const done = /TRUE|✓|済|○/i.test(firstOf(r, ['チェック','済','done','完了']));
-    const line = el('div','checkline' + (done ? ' done' : ''));
-    line.appendChild(el('div','box', done ? '✓' : ''));
-    line.appendChild(el('span', null,
-      `${esc(nm)}${num ? ` <small style="color:var(--text-dim)">×${esc(num)}</small>` : ''}${who ? ` <small style="color:var(--text-dim)">（${esc(who)}）</small>` : ''}`));
-    p.appendChild(line);
+  const groups = packingGroups();
+  if(!groups.size){
+    main.appendChild(el('div','empty',
+      `<span class="big">🎒</span>「持ち物」シートに<br>品名と担当を書くと、ここに並びます。`));
+    return;
+  }
+  const checks = loadChecks();
+  const people = [...groups.keys()];
+
+  // 誰のぶんを見るか（選んだ人は端末に記憶します）
+  if(people.length > 1){
+    const bar = el('div','whobar');
+    const chip = (label, val) => {
+      const b = el('button','whochip' + (STATE.who === val ? ' on' : ''), esc(label));
+      b.onclick = () => {
+        STATE.who = val;
+        try { val ? localStorage.setItem(WHO_KEY, val) : localStorage.removeItem(WHO_KEY); } catch(e){}
+        viewPack();
+      };
+      bar.appendChild(b);
+    };
+    chip('全員', null);
+    people.forEach(p => chip(p, p));
+    main.appendChild(bar);
+  }
+
+  people.filter(p => !STATE.who || STATE.who === p).forEach(who => {
+    const items = groups.get(who);
+    const p = el('div','panel');
+
+    const head = el('div','packhead');
+    head.appendChild(el('h2', null, `🎒 ${esc(who)}`));
+    const count = el('div','count');
+    head.appendChild(count);
+    p.appendChild(head);
+
+    const bar = el('div','bar');
+    const fill = el('i');
+    bar.appendChild(fill);
+    p.appendChild(bar);
+
+    const refresh = () => {
+      const done = items.filter(i => checks[i.id]).length;
+      count.textContent = `${done} / ${items.length}`;
+      count.classList.toggle('all', done === items.length);
+      fill.style.width = Math.round(done / items.length * 100) + '%';
+    };
+
+    items.forEach(item => {
+      const line = el('button','checkline' + (checks[item.id] ? ' done' : ''));
+      line.type = 'button';
+      const box = el('div','box', checks[item.id] ? '✓' : '');
+      line.appendChild(box);
+      line.appendChild(el('span','lbl',
+        `${esc(item.name)}`
+        + (item.num  ? ` <small>×${esc(item.num)}</small>` : '')
+        + (item.note ? `<br><small>${esc(item.note)}</small>` : '')));
+      line.onclick = () => {
+        if(checks[item.id]) delete checks[item.id];
+        else checks[item.id] = true;
+        saveChecks(checks);
+        line.classList.toggle('done', !!checks[item.id]);
+        box.textContent = checks[item.id] ? '✓' : '';
+        refresh();
+      };
+      p.appendChild(line);
+    });
+
+    refresh();
+    main.appendChild(p);
   });
-  main.appendChild(p);
-  main.appendChild(el('p','foot','チェックはスプレッドシートの「チェック」列に ✓ / TRUE を入れると反映されます。'));
+
+  const note = el('p','foot',
+    'チェックはこの端末にだけ保存されます。ほかの人の画面は変わりません。<br>');
+  const reset = el('button', null, 'この端末のチェックを全部消す');
+  reset.onclick = () => {
+    if(!confirm('チェックを全部外します。よろしいですか？')) return;
+    saveChecks({});
+    viewPack();
+    toast('チェックを消しました');
+  };
+  note.appendChild(reset);
+  main.appendChild(note);
 }
 
 function viewMoney(){
