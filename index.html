@@ -739,9 +739,16 @@ function imgUrl(u){
   if(m) return `https://drive.google.com/thumbnail?id=${m[1]}&sz=w1200`;
   return s;
 }
+/* 緯度経度を取り出す。数字を並べたものはもちろん、
+ * 座標を含んだGoogleマップのURLを貼っても読み取れます。 */
 function coordsOf(it){
-  const m = String(it.latlng||'').match(/(-?\d+\.\d+)\s*[,、]\s*(-?\d+\.\d+)/);
-  if(m) return [parseFloat(m[1]), parseFloat(m[2])];
+  for(const src of [it.latlng, it.map]){
+    const m = String(src || '').match(/(-?\d{1,3}\.\d{3,})\s*[,、\s]\s*(-?\d{1,3}\.\d{3,})/);
+    if(m){
+      const la = parseFloat(m[1]), ln = parseFloat(m[2]);
+      if(Math.abs(la) <= 90 && Math.abs(ln) <= 180) return [la, ln];
+    }
+  }
   if(it._geo) return it._geo;
   return null;
 }
@@ -1057,16 +1064,23 @@ async function nominatim(q, near){
   return null;
 }
 
-// 検索に使う語を、当たりやすい順に組み立てる
+/* 検索に使う語を、当たりやすい順に組み立てる。
+ *
+ * 「場所」が書いてあれば、それだけを手がかりにします。
+ * 名称まで検索語に混ぜると、たとえば「起床」のような予定名が
+ * 遠くの無関係な場所にヒットしてしまうためです。 */
 function geoQueries(it, area){
   const place = String(it.place || '').trim();
   const name  = String(it.name || '').split(/[→⇒~〜]/)[0].trim();
-  const noBanchi = place.replace(/[\d０-９]+[-−ー－‐][\d０-９-−ー－‐]*\s*$/, '').trim();
+  const base  = place || name;
+  if(!base) return [];
+
   const out = [];
-  if(place) out.push(place);
-  if(noBanchi && noBanchi !== place) out.push(noBanchi);
-  if(name)   out.push(area ? `${area} ${name}` : name);
-  if(name && area) out.push(name);
+  const hasAddr = /[都道府県市区町村]/.test(base);
+  if(area && !hasAddr) out.push(`${area} ${base}`);
+  out.push(base);
+  const noBanchi = base.replace(/[\d０-９]+[-−ー－‐][\d０-９-−ー－‐]*\s*$/, '').trim();
+  if(noBanchi && noBanchi !== base) out.push(noBanchi);
   return [...new Set(out.filter(Boolean))];
 }
 
