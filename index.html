@@ -655,8 +655,27 @@ function buildItinerary(rows){
 function target(it){
   return String(it.place || it.name || '').trim();
 }
+
+// Googleマップの共有リンクかどうか
+const isMapUrl = u =>
+  /^https?:\/\//i.test(u || '') && /maps\.app\.goo\.gl|goo\.gl\/maps|google\.[a-z.]+\/maps/i.test(u);
+
+/* マップ列に貼るのが本来ですが、写真や参考HPの列に入っていても拾います。
+ * 列を取り違えても、押せば目的の場所が開くように。 */
+function mapLinkOf(it){
+  return [it.map, it.photo, it.url].find(isMapUrl) || '';
+}
+
+/* 場所が分かっている予定かどうか。
+ * 「帰る」「就寝」のように行き先のない予定に、地図ボタンを出さないための判定です。
+ * 場所・マップ・緯度経度 のどれかが入っていれば対象になります。 */
+function hasLocation(it){
+  return !!(String(it.place || '').trim() || mapLinkOf(it) || String(it.latlng || '').trim());
+}
+
 function gmapSearch(it){
-  if(/^https?:\/\//i.test(it.map)) return it.map;           // マップ列にURLがあれば優先
+  const pinned = mapLinkOf(it);
+  if(pinned) return pinned;                                  // 貼られたリンクを優先
   const ll = coordsOf(it);
   if(ll) return `https://www.google.com/maps/search/?api=1&query=${ll[0]},${ll[1]}`;
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(target(it))}`;
@@ -675,7 +694,7 @@ function gmapNearby(it, kw){
 }
 // その日の全地点を1本のルートにして Google マップで開く
 function gmapDayRoute(day){
-  const pts = day.items.map(target).filter(Boolean);
+  const pts = day.items.filter(hasLocation).map(target).filter(Boolean);
   if(pts.length < 2) return null;
   const origin = pts[0], dest = pts[pts.length-1];
   const way = pts.slice(1,-1).slice(0,8);   // Google の無料URLは経由地9件程度が上限
@@ -686,10 +705,13 @@ function gmapDayRoute(day){
 // Google ドライブの共有リンクを画像URLに変換
 function imgUrl(u){
   const s = String(u||'').trim();
-  if(!s) return '';
-  const m = s.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([\w-]{20,})/);
+  if(!/^https?:\/\//i.test(s)) return '';
+  // Googleマップ／Googleフォトの共有リンクは画像ではないので、画像としては使わない
+  if(isMapUrl(s) || /photos\.app\.goo\.gl|photos\.google\.com/i.test(s)) return '';
+  // Googleドライブの共有リンクは、表示できる形に変換する
+  const m = s.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=|thumbnail\?id=|.*[?&]id=)([\w-]{20,})/);
   if(m) return `https://drive.google.com/thumbnail?id=${m[1]}&sz=w1200`;
-  return /^https?:\/\//i.test(s) ? s : '';
+  return s;
 }
 function coordsOf(it){
   const m = String(it.latlng||'').match(/(-?\d+\.\d+)\s*[,、]\s*(-?\d+\.\d+)/);
@@ -819,8 +841,9 @@ function itemCard(it, prev, isNow){
   const photo = imgUrl(it.photo);
   if(photo){
     const im = el('img','photo');
-    im.src = photo; im.alt = it.name; im.loading = 'lazy';
-    im.onerror = () => im.remove();
+    im.alt = it.name; im.loading = 'lazy';
+    im.onerror = () => im.remove();   // 読めないURLだった場合は静かに消す
+    im.src = photo;                   // onerror を付けてから読み込ませる
     card.appendChild(im);
   }
 
@@ -830,7 +853,7 @@ function itemCard(it, prev, isNow){
     a.href = href; a.target = '_blank'; a.rel = 'noopener';
     acts.appendChild(a);
   };
-  if(target(it)){
+  if(hasLocation(it)){
     add(gmapRoute(it), 'primary', '🧭 ここへ行く');
     add(gmapSearch(it), '', '🗺 地図');
     add(gmapNearby(it, '観光'), '', '👀 周辺');
@@ -940,9 +963,9 @@ async function viewMap(){
     if(STATE.layer) STATE.layer.remove();
     STATE.layer = L.layerGroup().addTo(map);
     const bounds = [];
-    day.items.forEach((it, k) => {
+    // 地図に出すのは、場所が分かっている予定だけ。番号は詰めて振る
+    day.items.filter(it => hasLocation(it) && coordsOf(it)).forEach((it, k) => {
       const ll = coordsOf(it);
-      if(!ll) return;
       bounds.push(ll);
       const icon = L.divIcon({
         className:'', iconSize:[27,27], iconAnchor:[13,26], popupAnchor:[0,-24],
@@ -971,7 +994,7 @@ async function viewMap(){
 
   // 座標が無いものを補う（1件ずつゆっくり・結果は端末に保存）
   const anchor = await resolveAnchor();
-  const todo = day.items.filter(it => !coordsOf(it) && target(it));
+  const todo = day.items.filter(it => !coordsOf(it) && hasLocation(it));
   for(const it of todo){
     if(STATE.tab !== 'map') return;   // 画面を離れたら中断
     const ll = await geocode(geoQueries(it, STATE.area), anchor);
