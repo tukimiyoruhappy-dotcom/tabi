@@ -533,9 +533,22 @@ async function loadAllSheets(){
 }
 
 /* ------------------------------ データ整形 -------------------------------- */
+// 日本語入力で入りがちな全角の数字・記号を半角に直す
+function toHalf(s){
+  return String(s ?? '')
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[：]/g, ':')
+    .replace(/[／]/g, '/')
+    .replace(/[－ー―]/g, '-')
+    .trim();
+}
+
+/* 並び順は 実際の日付 → 「N日目」 → その他の文字 → 空欄 の順。
+ * 日付がまだ決まっていなくても、書いた分だけ形になります。 */
 function parseDateKey(s){
-  const t = String(s||'').trim();
-  if(!t) return {key:'', sort:'zzzz', label:'日付未定', wd:''};
+  const t = toHalf(s);
+  if(!t) return {key:'', sort:'D', label:'日付未定', short:'未定', wd:''};
+
   const m = t.match(/(\d{4})[\/\-年.](\d{1,2})[\/\-月.](\d{1,2})/)
          || t.match(/^(\d{1,2})[\/\-月.](\d{1,2})/);
   let y, mo, d;
@@ -546,17 +559,34 @@ function parseDateKey(s){
     const wd = '日月火水木金土'[dt.getDay()];
     return {
       key: `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`,
-      sort: `${y}${String(mo).padStart(2,'0')}${String(d).padStart(2,'0')}`,
+      sort: 'A' + `${y}${String(mo).padStart(2,'0')}${String(d).padStart(2,'0')}`,
       label: `${mo}月${d}日`, short:`${mo}/${d}`, wd, date: dt,
     };
   }
-  return {key:t, sort:'zzz'+t, label:t, short:t, wd:''};
+
+  // 「1日目」「2日目」— 日程がまだ確定していないとき用
+  const nth = t.match(/^(\d{1,3})\s*日目/);
+  if(nth){
+    return {
+      key: 'nth' + nth[1],
+      sort: 'B' + String(nth[1]).padStart(3, '0'),
+      label: `${nth[1]}日目`, short:`${nth[1]}日目`, wd:'',
+    };
+  }
+
+  return {key:t, sort:'C'+t, label:t, short:t, wd:''};
 }
 
 function parseTime(s){
-  const m = String(s||'').match(/(\d{1,2})\s*[:時]\s*(\d{1,2})?/);
+  const t = toHalf(s);
+  const m = t.match(/(\d{1,2})\s*[:時]\s*(\d{1,2})?/);
   if(!m) return null;
-  return {h:+m[1], m:+(m[2]||0), text:`${m[1]}:${String(m[2]||'0').padStart(2,'0')}`, mins:+m[1]*60 + +(m[2]||0)};
+  let h = +m[1];
+  const mi = +(m[2] || 0);
+  // 午後7時 を 19:00 として扱う（12時間表記のとりこぼし防止）
+  if(/午後|ごご|PM|P\.M\./i.test(t) && h < 12) h += 12;
+  if(/午前|ごぜん|AM|A\.M\./i.test(t) && h === 12) h = 0;
+  return {h, m:mi, text:`${h}:${String(mi).padStart(2,'0')}`, mins:h*60 + mi};
 }
 
 function isTentative(status){
@@ -694,7 +724,9 @@ function renderCover(){
   }
   const n = (STATE.data.members||[]).length;
   if(n) meta.appendChild(el('span','pill', `👥 ${n}人`));
-  if(s['集合場所']) meta.appendChild(el('span','pill', `📍 ${s['集合場所']}`));
+  // 集合場所・泊まる場所など、場所らしい設定を表紙にも出す
+  const placeKey = Object.keys(s).find(k => isPlace(k, s[k]));
+  if(placeKey) meta.appendChild(el('span','pill', `📍 ${s[placeKey]}`));
 }
 
 function renderTabs(){
@@ -1194,6 +1226,16 @@ const RE_TEL  = /電話|連絡先|tel/i;
 const RE_RULE = /おやくそく|お約束|約束|やくそく|ルール|きまり|決まり/;
 // 090-0000-0000 のような区切りつきでも拾えるよう、数字の個数で見る
 const isPhone = (k, v) => RE_TEL.test(k) && String(v).replace(/\D/g, '').length >= 6;
+// 「泊まる場所」「集合場所」など、地図で開きたくなる項目
+const RE_PLACE = /場所|ホテル|旅館|宿|泊|会場|集合|拠点|駅|空港|現地/;
+const isPlace = (k, v) => RE_PLACE.test(k) && v && !/^https?:\/\//i.test(v);
+
+// 地名が短いときだけ、エリアを補って検索精度を上げる
+function placeQuery(v){
+  const area = (STATE.data.settings || {})['エリア'] || '';
+  const hasAddr = /[都道府県市区町村]/.test(v);
+  return (area && !hasAddr) ? `${area} ${v}` : v;
+}
 function settingsExtras(){
   return Object.entries((STATE.data && STATE.data.settings) || {})
     .filter(([k, v]) => String(v).trim() && !SETTING_USED.includes(k));
@@ -1257,10 +1299,29 @@ function viewInfo(){
       const row = el('div','row');
       const isUrl = /^https?:\/\//i.test(v);
       const isTel = isPhone(k, v);
-      row.appendChild(el('div','k', `<b>${esc(k)}</b><span>${
+      const box = el('div','k');
+      box.innerHTML = `<b>${esc(k)}</b><span>${
         isUrl ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>`
         : isTel ? `<a href="tel:${esc(String(v).replace(/[^\d+]/g,''))}">${esc(v)}</a>`
-        : esc(v)}</span>`));
+        : esc(v)}</span>`;
+
+      // 場所なら地図と経路へ、3列目にURLがあればホームページへ飛べるようにする
+      const acts = el('div','acts');
+      const add = (href, cls, label) => {
+        const a = el('a','act' + (cls ? ' ' + cls : ''), label);
+        a.href = href; a.target = '_blank'; a.rel = 'noopener';
+        acts.appendChild(a);
+      };
+      if(isPlace(k, v)){
+        const q = encodeURIComponent(placeQuery(v));
+        add(`https://www.google.com/maps/dir/?api=1&destination=${q}&travelmode=transit`, 'primary', '🧭 ここへ行く');
+        add(`https://www.google.com/maps/search/?api=1&query=${q}`, '', '🗺 地図');
+      }
+      const link = (STATE.data.settingLinks || {})[k];
+      if(link) add(link, '', '🔗 ホームページ');
+      if(acts.children.length) box.appendChild(acts);
+
+      row.appendChild(box);
       p.appendChild(row);
     });
     main.appendChild(p);
@@ -1296,17 +1357,20 @@ async function load(force){
     const itin = sheets.itinerary;
     if(!itin && !sheets.settings) throw new Error('シートを読めませんでした');
 
-    const settings = {};
+    // 「設定」は 項目 | 値 | リンク(任意) の3列まで読みます
+    const settings = {}, settingLinks = {};
     (sheets.settings || []).forEach(r => {
       const ks = allKeys(r);
       const k = String(r[ks[0]]||'').trim();
-      const v = String(r[ks[1]]||'').trim();
-      if(k) settings[k] = v;
+      if(!k) return;
+      settings[k] = String(r[ks[1]]||'').trim();
+      const link = ks[2] ? String(r[ks[2]]||'').trim() : '';
+      if(/^https?:\/\//i.test(link)) settingLinks[k] = link;
     });
 
     STATE.data = {
       days: buildItinerary(itin || []),
-      settings,
+      settings, settingLinks,
       members:    sheets.members    || [],
       packing:    sheets.packing    || [],
       budget:     sheets.budget     || [],
