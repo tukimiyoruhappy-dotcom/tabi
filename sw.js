@@ -4,7 +4,7 @@
  * ・スプレッドシートのデータは常に最新を取りに行き、取れなければ画面側の
  *   localStorage キャッシュが使われます
  */
-const VERSION = 'tabi-v1';
+const VERSION = 'tabi-v2';
 const SHELL = [
   './',
   './index.html',
@@ -35,12 +35,12 @@ self.addEventListener('fetch', e => {
 
   const url = new URL(req.url);
 
-  // スプレッドシートと地図タイルはキャッシュせず、常にネットワークへ
-  if (url.hostname.includes('docs.google.com') ||
-      url.hostname.includes('tile.openstreetmap.org') ||
-      url.hostname.includes('nominatim.openstreetmap.org')) {
-    return;
-  }
+  /* 扱うのは「アプリ本体」だけ。
+   * スプレッドシート・地図タイル・写真などは一切横取りせず、
+   * ブラウザにそのまま任せます（余計な失敗を持ち込まないため）。 */
+  const isOwn   = url.origin === self.location.origin;
+  const isShell = SHELL.includes(req.url);
+  if (!isOwn && !isShell) return;
 
   // アプリ本体はネットワーク優先・失敗したらキャッシュ
   e.respondWith(

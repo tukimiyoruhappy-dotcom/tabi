@@ -186,7 +186,10 @@ main{padding:16px 14px 90px;max-width:720px;margin:0 auto}
 .card .facts{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
 .fact{font-size:11px;font-weight:700;color:var(--text-dim);background:var(--surface-2);padding:2px 9px;border-radius:8px}
 .card img.photo{
-  display:block;width:100%;height:auto;max-height:230px;object-fit:cover;
+  display:block;width:100%;height:auto;
+  /* 読み込み前でも枠を確保しておく。遅延読み込みが確実に働きます
+     （読めなかった画像はカードごと取り除くので、空枠は残りません） */
+  min-height:140px;max-height:230px;object-fit:cover;
   border-radius:11px;margin-top:9px;background:var(--surface-2);
 }
 .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
@@ -729,15 +732,28 @@ function gmapDayRoute(day){
   return u + '&travelmode=driving';
 }
 // Google ドライブの共有リンクを画像URLに変換
+// Googleドライブの共有リンクからファイルIDを取り出す
+function driveId(u){
+  const m = String(u||'').match(
+    /drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=|thumbnail\?id=|.*[?&]id=)([\w-]{20,})/);
+  return m ? m[1] : '';
+}
+
 function imgUrl(u){
   const s = String(u||'').trim();
   if(!/^https?:\/\//i.test(s)) return '';
   // Googleマップ／Googleフォトの共有リンクは画像ではないので、画像としては使わない
   if(isMapUrl(s) || /photos\.app\.goo\.gl|photos\.google\.com/i.test(s)) return '';
-  // Googleドライブの共有リンクは、表示できる形に変換する
-  const m = s.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=|thumbnail\?id=|.*[?&]id=)([\w-]{20,})/);
-  if(m) return `https://drive.google.com/thumbnail?id=${m[1]}&sz=w1200`;
+  const id = driveId(s);
+  if(id) return `https://drive.google.com/thumbnail?id=${id}&sz=w1200`;
   return s;
+}
+
+/* ドライブの thumbnail は、1ページに画像が多いと読み込みを断られることがあります。
+ * そのときのための、もう一つの入口。 */
+function imgUrlAlt(u){
+  const id = driveId(u);
+  return id ? `https://drive.google.com/uc?export=view&id=${id}` : '';
 }
 /* 緯度経度を取り出す。数字を並べたものはもちろん、
  * 座標を含んだGoogleマップのURLを貼っても読み取れます。 */
@@ -879,8 +895,13 @@ function itemCard(it, prev, isNow){
   if(photo){
     const im = el('img','photo');
     im.alt = it.name; im.loading = 'lazy';
-    im.onerror = () => im.remove();   // 読めないURLだった場合は静かに消す
-    im.src = photo;                   // onerror を付けてから読み込ませる
+    let retried = false;
+    im.onerror = () => {              // onerror は src より先に付けておく
+      const alt = imgUrlAlt(it.photo);
+      if(!retried && alt){ retried = true; im.src = alt; return; }
+      im.remove();                    // それでも読めなければ静かに消す
+    };
+    im.src = photo;
     card.appendChild(im);
   }
 
