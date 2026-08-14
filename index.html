@@ -118,6 +118,7 @@ button{font-family:inherit;font-size:inherit;cursor:pointer;border:0;background:
   border-bottom:1px solid var(--line);
 }
 .daynav::-webkit-scrollbar{display:none}
+.daynav[hidden]{display:none}   /* display:flex に負けないよう明示 */
 .daychip{
   flex:0 0 auto;padding:5px 13px;border-radius:999px;
   background:var(--surface);border:1px solid var(--line);
@@ -220,6 +221,27 @@ main{padding:16px 14px 90px;max-width:720px;margin:0 auto}
 }
 .checkline.done .box{background:var(--accent);border-color:var(--accent)}
 .checkline.done span{text-decoration:line-through;color:var(--text-faint)}
+.callout{
+  background:var(--accent-soft);border-radius:var(--radius);
+  padding:13px 16px;margin-bottom:14px;
+}
+.callout .lbl{
+  font-size:10.5px;font-weight:800;letter-spacing:.1em;color:var(--accent);
+  display:block;margin-bottom:2px;
+}
+.callout p{margin:0;font-size:14.5px;font-weight:700;line-height:1.75;white-space:pre-wrap}
+.telcard{
+  display:flex;align-items:center;gap:13px;text-decoration:none;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:13px 15px;margin-bottom:14px;
+}
+.telcard .ic{
+  flex:0 0 auto;width:42px;height:42px;border-radius:50%;background:var(--accent);
+  display:flex;align-items:center;justify-content:center;font-size:19px;
+}
+.telcard .tx{flex:1 1 auto;min-width:0}
+.telcard .tx b{display:block;font-size:10.5px;font-weight:800;letter-spacing:.09em;color:var(--text-dim)}
+.telcard .tx span{display:block;font-size:19px;font-weight:800;letter-spacing:.02em;font-variant-numeric:tabular-nums}
 .people{display:flex;flex-wrap:wrap;gap:9px}
 .person{
   display:flex;align-items:center;gap:8px;background:var(--surface-2);
@@ -683,7 +705,7 @@ function renderTabs(){
   if((d.budget||[]).length || d.days.some(x=>x.items.some(i=>i.cost))) tabs.push(['money','💰 お金', true]);
   if((d.stay||[]).length || (d.transport||[]).length) tabs.push(['book','🎫 予約', true]);
   if((d.candidates||[]).length) tabs.push(['idea','💡 候補', true]);
-  if((d.members||[]).length || (d.info||[]).length) tabs.push(['info','ℹ️ 情報', true]);
+  if((d.members||[]).length || (d.info||[]).length || settingsExtras().length) tabs.push(['info','ℹ️ 情報', true]);
 
   const nav = $('#tabs'); nav.innerHTML = '';
   tabs.forEach(([id, label]) => {
@@ -1166,8 +1188,34 @@ function viewIdea(){
   main.appendChild(p);
 }
 
+/* 「設定」シートのうち、表紙や動作の指定に使ったもの以外を情報タブに出す */
+const SETTING_USED = ['タイトル','サブタイトル','テーマ色','表紙画像','カバー画像','英字見出し','ひとこと','エリア','地域','行き先'];
+const RE_TEL  = /電話|連絡先|tel/i;
+const RE_RULE = /おやくそく|お約束|約束|やくそく|ルール|きまり|決まり/;
+// 090-0000-0000 のような区切りつきでも拾えるよう、数字の個数で見る
+const isPhone = (k, v) => RE_TEL.test(k) && String(v).replace(/\D/g, '').length >= 6;
+function settingsExtras(){
+  return Object.entries((STATE.data && STATE.data.settings) || {})
+    .filter(([k, v]) => String(v).trim() && !SETTING_USED.includes(k));
+}
+
 function viewInfo(){
   const main = $('#main'); main.innerHTML = '';
+  const extras = settingsExtras();
+
+  // 連絡先は、押せばそのままかけられる形で目立たせる
+  extras.filter(([k, v]) => isPhone(k, v)).forEach(([k, v]) => {
+    const a = el('a','telcard');
+    a.href = 'tel:' + String(v).replace(/[^\d+]/g, '');
+    a.innerHTML = `<div class="ic">📞</div><div class="tx"><b>${esc(k)}</b><span>${esc(v)}</span></div>`;
+    main.appendChild(a);
+  });
+
+  // おやくそくは いちばん上に大きく
+  extras.filter(([k]) => RE_RULE.test(k)).forEach(([k, v]) => {
+    main.appendChild(el('div','callout', `<span class="lbl">${esc(k)}</span><p>${esc(v)}</p>`));
+  });
+
   const mem = STATE.data.members || [];
   if(mem.length){
     const p = el('div','panel');
@@ -1200,16 +1248,15 @@ function viewInfo(){
     });
     main.appendChild(p);
   }
-  const s = STATE.data.settings || {};
-  const extras = Object.entries(s).filter(([k]) =>
-    !['タイトル','サブタイトル','テーマ色','表紙画像','カバー画像','英字見出し','ひとこと'].includes(k));
-  if(extras.length){
+  // 上で個別に出したもの以外を、一覧としてまとめる
+  const rest = extras.filter(([k, v]) => !RE_RULE.test(k) && !isPhone(k, v));
+  if(rest.length){
     const p = el('div','panel');
     p.appendChild(el('h2', null, '📋 そのほか'));
-    extras.forEach(([k,v]) => {
+    rest.forEach(([k,v]) => {
       const row = el('div','row');
       const isUrl = /^https?:\/\//i.test(v);
-      const isTel = /電話|連絡先|tel/i.test(k) && /\d{6,}/.test(v);
+      const isTel = isPhone(k, v);
       row.appendChild(el('div','k', `<b>${esc(k)}</b><span>${
         isUrl ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>`
         : isTel ? `<a href="tel:${esc(String(v).replace(/[^\d+]/g,''))}">${esc(v)}</a>`
