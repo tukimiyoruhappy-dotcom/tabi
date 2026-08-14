@@ -1199,21 +1199,56 @@ function saveChecks(o){
   try { localStorage.setItem(CHECK_KEY, JSON.stringify(o)); } catch(e){}
 }
 
-// 担当ごとにまとめる。同じ担当・同じ品名が複数あっても取り違えないよう連番を付ける
+/* 担当ごとにまとめる。
+ *
+ * 持ち物シートの「グループ」列に大きなくくり（例: 大久保家 / 吉野家）を、
+ * 「共通」列に共有のくくり（例: 両方）の名前を書いておくと、
+ * 共通に入れた品物が各グループのリストへ配られます。
+ * それ以外の担当（子どもの名前など）は、その人だけのリストになり、
+ * 共通の品物は入りません。
+ *
+ * 名前を変えたいときは、この2つの列を書き換えるだけです。 */
+function packingConfig(rows){
+  const groupNames = [], sharedNames = [];
+  rows.forEach(r => {
+    const g = String(firstOf(r, ['グループ','家族','くくり','group'])).trim();
+    if(g && !groupNames.includes(g)) groupNames.push(g);
+    const s = String(firstOf(r, ['共通','全員共通','共有','shared'])).trim();
+    if(s && !sharedNames.includes(s)) sharedNames.push(s);
+  });
+  return { groupNames, sharedNames };
+}
+
 function packingGroups(){
+  const rows = STATE.data.packing || [];
+  const { groupNames, sharedNames } = packingConfig(rows);
+
   const seen = new Map(), groups = new Map();
-  (STATE.data.packing || []).forEach(r => {
-    const name = firstOf(r, ['品名','持ち物','品目','item','名称']);
-    if(!name) return;
-    const who  = firstOf(r, ['担当','だれ','who','担当者','持つ人']) || 'みんな';
-    const num  = firstOf(r, ['個数','数','qty']);
-    const note = firstOf(r, ['備考','メモ','note']);
-    const base = `${who}|${name}`;
+  groupNames.forEach(g => groups.set(g, []));   // 設定した順に並べる
+
+  const push = (bucket, name, num, note) => {
+    if(!groups.has(bucket)) groups.set(bucket, []);
+    const base = `${bucket}|${name}`;
     const n = (seen.get(base) || 0) + 1;
     seen.set(base, n);
-    if(!groups.has(who)) groups.set(who, []);
-    groups.get(who).push({ id: n > 1 ? `${base}#${n}` : base, name, num, note });
+    groups.get(bucket).push({ id: n > 1 ? `${base}#${n}` : base, name, num, note });
+  };
+
+  rows.forEach(r => {
+    const name = firstOf(r, ['品名','持ち物','品目','item','名称']);
+    if(!name) return;
+    const who  = String(firstOf(r, ['担当','だれ','who','担当者','持つ人'])).trim() || 'みんな';
+    const num  = firstOf(r, ['個数','数','qty']);
+    const note = firstOf(r, ['備考','メモ','note']);
+
+    if(groupNames.length && sharedNames.includes(who)){
+      groupNames.forEach(g => push(g, name, num, note));   // 共通は各グループへ配る
+    }else{
+      push(who, name, num, note);                          // グループ本人・個人はそのまま
+    }
   });
+
+  [...groups.keys()].forEach(k => { if(!groups.get(k).length) groups.delete(k); });
   return groups;
 }
 
