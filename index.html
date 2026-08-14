@@ -1,0 +1,1281 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>旅のしおり</title>
+<meta name="theme-color" content="#e8734a">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%97%BA%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+/* ============================================================
+   旅のしおり — テーマ
+   色は「設定」シートの テーマ色 で上書きできます
+   ============================================================ */
+:root{
+  --accent:#e8734a;
+  --accent-soft:#fdeee7;
+  --bg:#faf7f2;
+  --surface:#ffffff;
+  --surface-2:#f4efe7;
+  --line:#e6ddd0;
+  --text:#2f2a25;
+  --text-dim:#7d7469;
+  --text-faint:#a99f92;
+  --shadow:0 1px 2px rgba(60,45,30,.06), 0 6px 18px rgba(60,45,30,.07);
+  --radius:16px;
+  --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --accent-soft:#3a2a22;
+    --bg:#17150f;
+    --surface:#221f19;
+    --surface-2:#2c2820;
+    --line:#3a352b;
+    --text:#f0eae0;
+    --text-dim:#a89f91;
+    --text-faint:#7d7469;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.35);
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--font);
+  background:var(--bg);
+  color:var(--text);
+  line-height:1.7;
+  font-size:15px;
+  padding-bottom:env(safe-area-inset-bottom);
+  overflow-wrap:break-word;
+}
+a{color:inherit}
+button{font-family:inherit;font-size:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* ---------- 表紙ヘッダー ---------- */
+.cover{
+  position:relative;
+  padding:26px 20px 18px;
+  background:linear-gradient(160deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 65%, #8a4a8f) 100%);
+  color:#fff;
+  overflow:hidden;
+}
+.cover.has-img::before{
+  content:"";position:absolute;inset:0;
+  background-image:var(--cover-img);
+  background-size:cover;background-position:center;
+  opacity:.42;
+}
+.cover.has-img::after{
+  content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.5));
+}
+.cover > *{position:relative;z-index:2}
+.cover .kicker{font-size:11px;letter-spacing:.22em;opacity:.85;text-transform:uppercase;margin:0 0 4px}
+.cover h1{margin:0;font-size:26px;line-height:1.3;font-weight:800;letter-spacing:.01em;text-shadow:0 1px 12px rgba(0,0,0,.25)}
+.cover .sub{margin:6px 0 0;font-size:13.5px;opacity:.92}
+.cover .meta{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px}
+/* しおり以外のタブでは表紙を細くして、本文を広く使う */
+.cover.compact{padding:13px 20px 11px}
+.cover.compact h1{font-size:17px}
+.cover.compact .kicker,
+.cover.compact .sub,
+.cover.compact .meta{display:none}
+.cover .pill{
+  background:rgba(255,255,255,.2);
+  border:1px solid rgba(255,255,255,.28);
+  backdrop-filter:blur(6px);
+  padding:3px 11px;border-radius:999px;font-size:12px;font-weight:600;
+}
+
+/* ---------- タブ ---------- */
+.tabs{
+  position:sticky;top:0;z-index:60;
+  display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:saturate(180%) blur(14px);
+  border-bottom:1px solid var(--line);
+  padding:0 8px;
+}
+.tabs::-webkit-scrollbar{display:none}
+.tab{
+  flex:0 0 auto;padding:12px 13px 10px;font-size:13px;font-weight:700;
+  color:var(--text-faint);border-bottom:2.5px solid transparent;white-space:nowrap;
+}
+.tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* ---------- 日付ナビ ---------- */
+.daynav{
+  position:sticky;top:44px;z-index:55;
+  display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;
+  padding:9px 14px;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:saturate(180%) blur(14px);
+  border-bottom:1px solid var(--line);
+}
+.daynav::-webkit-scrollbar{display:none}
+.daychip{
+  flex:0 0 auto;padding:5px 13px;border-radius:999px;
+  background:var(--surface);border:1px solid var(--line);
+  font-size:12.5px;font-weight:700;color:var(--text-dim);
+  display:flex;align-items:baseline;gap:6px;
+}
+.daychip b{font-size:13.5px;color:var(--text)}
+.daychip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.daychip.on b{color:#fff}
+
+main{padding:16px 14px 90px;max-width:720px;margin:0 auto}
+
+/* ---------- 日セクション ---------- */
+.day{margin:0 0 30px;scroll-margin-top:96px}
+.day-head{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:0 2px}
+.day-num{
+  flex:0 0 auto;width:38px;height:38px;border-radius:12px;
+  background:var(--accent);color:#fff;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-size:9px;font-weight:700;line-height:1.05;letter-spacing:.06em;
+}
+.day-num b{font-size:16px;letter-spacing:0}
+.day-head .d-date{font-size:15px;font-weight:800;margin:0}
+.day-head .d-sub{font-size:11.5px;color:var(--text-dim);margin:0}
+
+/* ---------- 予定カード ---------- */
+.leg{
+  display:flex;align-items:center;gap:7px;
+  margin:0 0 6px 52px;font-size:11.5px;color:var(--text-dim);font-weight:600;
+}
+.leg::before{content:"";width:2px;height:16px;background:var(--line);border-radius:2px;margin-left:5px}
+
+.item{
+  display:flex;gap:11px;margin-bottom:10px;position:relative;
+}
+.item .rail{flex:0 0 44px;text-align:right;padding-top:11px}
+.item .t1{font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.item .t2{font-size:10.5px;color:var(--text-faint);font-variant-numeric:tabular-nums}
+.card{
+  flex:1 1 auto;min-width:0;
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);box-shadow:var(--shadow);
+  padding:12px 13px;position:relative;overflow:hidden;
+}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cat,#bbb)}
+.item.tentative .card{border-style:dashed;background:transparent;box-shadow:none}
+.item.tentative .card .title{color:var(--text-dim)}
+.item.now .card{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft), var(--shadow)}
+
+.card .toprow{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:2px}
+.cat{
+  font-size:10.5px;font-weight:800;padding:1.5px 8px;border-radius:999px;
+  background:var(--cat-soft,#eee);color:var(--cat-ink,#555);letter-spacing:.03em;
+}
+.badge{font-size:10px;font-weight:800;padding:1.5px 7px;border-radius:999px;border:1px solid currentColor}
+.badge.now{background:var(--accent);border-color:var(--accent);color:#fff}
+.badge.tent{color:var(--text-faint)}
+.card .title{font-size:15.5px;font-weight:800;line-height:1.45;margin:0}
+.card .place{font-size:12.5px;color:var(--text-dim);margin:2px 0 0}
+.card .want{
+  font-size:12.5px;margin:7px 0 0;padding:7px 10px;border-radius:10px;
+  background:var(--accent-soft);color:var(--text);font-weight:600;
+}
+.card .note{font-size:12.5px;color:var(--text-dim);margin:6px 0 0;white-space:pre-wrap}
+.card .facts{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.fact{font-size:11px;font-weight:700;color:var(--text-dim);background:var(--surface-2);padding:2px 9px;border-radius:8px}
+.card img.photo{
+  display:block;width:100%;height:auto;max-height:230px;object-fit:cover;
+  border-radius:11px;margin-top:9px;background:var(--surface-2);
+}
+.acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.act{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:12px;font-weight:800;text-decoration:none;
+  padding:7px 11px;border-radius:10px;
+  background:var(--surface-2);border:1px solid var(--line);color:var(--text);
+}
+.act.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.act:active{transform:scale(.97)}
+
+/* ---------- 汎用リスト（持ち物・お金・みんな 等） ---------- */
+.panel{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:14px;margin-bottom:14px;
+}
+.panel h2{margin:0 0 10px;font-size:15px;font-weight:800;display:flex;align-items:center;gap:7px}
+.row{display:flex;gap:10px;padding:9px 0;border-top:1px solid var(--line);align-items:flex-start}
+.row:first-of-type{border-top:0}
+.row .k{flex:1 1 auto;min-width:0}
+.row .k b{font-size:14px;font-weight:700;display:block}
+.row .k span{font-size:12px;color:var(--text-dim)}
+.row .v{flex:0 0 auto;font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums;text-align:right}
+.total{display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;padding-top:10px;border-top:2px solid var(--line)}
+.total b{font-size:19px}
+.checkline{display:flex;align-items:center;gap:9px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.checkline:first-of-type{border-top:0}
+.checkline .box{
+  flex:0 0 auto;width:21px;height:21px;border-radius:6px;border:2px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;font-weight:900;
+}
+.checkline.done .box{background:var(--accent);border-color:var(--accent)}
+.checkline.done span{text-decoration:line-through;color:var(--text-faint)}
+.people{display:flex;flex-wrap:wrap;gap:9px}
+.person{
+  display:flex;align-items:center;gap:8px;background:var(--surface-2);
+  border-radius:999px;padding:5px 13px 5px 6px;font-size:13px;font-weight:700;
+}
+.person .av{
+  width:29px;height:29px;border-radius:50%;background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;
+}
+
+/* ---------- 地図 ---------- */
+#map{height:calc(100dvh - 190px);min-height:320px;border-radius:var(--radius);border:1px solid var(--line);box-shadow:var(--shadow);z-index:1}
+.mapbar{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 11px}
+.mappin{
+  background:var(--accent);color:#fff;border-radius:50% 50% 50% 2px;
+  width:27px;height:27px;transform:rotate(-45deg);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 6px rgba(0,0,0,.35);border:2px solid #fff;
+}
+.mappin span{transform:rotate(45deg);font-size:12px;font-weight:900}
+.leaflet-popup-content{margin:11px 13px;font-family:var(--font);min-width:170px}
+.pop-t{font-size:11px;font-weight:800;color:var(--accent)}
+.pop-n{font-size:14.5px;font-weight:800;margin:1px 0 3px;line-height:1.4}
+.pop-p{font-size:11.5px;color:#777;margin:0 0 8px}
+.pop a{display:inline-block;font-size:11.5px;font-weight:800;text-decoration:none;background:var(--accent);color:#fff;padding:5px 10px;border-radius:8px;margin:0 4px 4px 0}
+.pop a.sec{background:#eceae6;color:#333}
+
+/* ---------- 補助 ---------- */
+.empty{text-align:center;color:var(--text-faint);font-size:13.5px;padding:44px 20px;line-height:2}
+.empty .big{font-size:34px;display:block;margin-bottom:6px}
+.toast{
+  position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);
+  background:var(--text);color:var(--bg);font-size:12.5px;font-weight:700;
+  padding:9px 17px;border-radius:999px;z-index:200;box-shadow:0 6px 22px rgba(0,0,0,.28);
+  opacity:0;pointer-events:none;transition:opacity .25s, transform .25s; white-space:nowrap;
+}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(-4px)}
+.fab{
+  position:fixed;right:15px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:70;
+  width:47px;height:47px;border-radius:50%;background:var(--surface);
+  border:1px solid var(--line);box-shadow:var(--shadow);
+  display:flex;align-items:center;justify-content:center;font-size:19px;
+}
+.fab:active{transform:scale(.93)}
+.foot{text-align:center;font-size:11px;color:var(--text-faint);padding:8px 20px 20px;line-height:1.9}
+.foot button{text-decoration:underline;font-size:11px;color:var(--text-faint)}
+.spin{animation:sp 1s linear infinite;display:inline-block}
+@keyframes sp{to{transform:rotate(360deg)}}
+.skel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);height:92px;margin-bottom:10px;opacity:.55;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.4}50%{opacity:.75}}
+</style>
+</head>
+<body>
+
+<header class="cover" id="cover">
+  <p class="kicker" id="kicker">TRAVEL NOTE</p>
+  <h1 id="ttl">旅のしおり</h1>
+  <p class="sub" id="sub"></p>
+  <div class="meta" id="meta"></div>
+</header>
+
+<nav class="tabs" id="tabs" role="tablist"></nav>
+<div class="daynav" id="daynav" hidden></div>
+
+<main id="main">
+  <div class="skel"></div><div class="skel"></div><div class="skel"></div>
+</main>
+
+<button class="fab" id="reload" title="最新に更新">↻</button>
+<div class="toast" id="toast"></div>
+<p class="foot" id="foot"></p>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ============================================================================
+ * 旅のしおり  —  Google スプレッドシートを読むだけの静的ビューア
+ *
+ * 仕組み: スプレッドシートを「リンクを知っている全員が閲覧可」にすると
+ *         gviz エンドポイントから JSON で読めます。ログインも API キーも不要。
+ *         → 警告画面は一切出ません。
+ *
+ * 別の旅行に使い回す: URL の末尾に ?id=＜スプレッドシートID＞ を付けるだけ。
+ *   例) https://yourname.github.io/tabi/?id=1AbC...xyz
+ * ==========================================================================*/
+
+const CONFIG = {
+  // 既定のスプレッドシート（?id= を付けなかったときに開くもの）
+  DEFAULT_SHEET_ID: '1s9jsBsDJjaOzlLtsrNYUDmv2moQ6YnR2bm-iAjqcmAY',
+  // 読みに行くシート名。無いシートは自動的に読み飛ばします。
+  SHEETS: {
+    itinerary: ['行程', 'しおり', 'スケジュール', 'シート1'],
+    settings:  ['設定'],
+    members:   ['メンバー'],
+    packing:   ['持ち物'],
+    budget:    ['費用', '予算'],
+    stay:      ['宿泊'],
+    transport: ['交通'],
+    candidates:['候補', '候補地'],
+    info:      ['基本情報', 'ルール', 'メモ'],
+  },
+};
+
+/* --------------------------------- 列の別名 ------------------------------- */
+const ALIAS = {
+  date:     ['日にち','日付','日','date'],
+  start:    ['時間','開始','開始時間','時刻','start','time'],
+  end:      ['終了時間','終了','おわり','end'],
+  cat:      ['カテゴリ','区分','種別','category'],
+  name:     ['名称','タイトル','予定','name','title'],
+  place:    ['場所','住所','スポット','place','address'],
+  latlng:   ['緯度経度','座標','latlng'],
+  move:     ['移動手段','交通手段','交通','移動','transport'],
+  dur:      ['所要','所要時間','移動時間','duration'],
+  cost:     ['費用','金額','予算','cost'],
+  url:      ['参考hp','参考','リンク','url','hp','ホームページ'],
+  photo:    ['写真','画像','photo','image'],
+  map:      ['マップ','地図','map'],
+  file:     ['ファイル','資料','file'],
+  rating:   ['評価','おすすめ度','rating'],
+  want:     ['やりたいこと','目的','ハイライト','ねらい'],
+  note:     ['備考','メモ','note','コメント'],
+  booking:  ['予約番号','予約','booking','確認番号'],
+  tel:      ['電話','tel','電話番号'],
+  status:   ['状態','ステータス','status','確定'],
+  show:     ['表示','show'],
+};
+
+/* ------------------------------ カテゴリ定義 ------------------------------ */
+const CATS = {
+  '移動':   {e:'🚃', c:'#5b8def', s:'#e8effd', i:'#2c5bbf'},
+  '観光':   {e:'🏞️', c:'#3fae7a', s:'#e4f5ec', i:'#237a52'},
+  '食事':   {e:'🍽️', c:'#e8734a', s:'#fdece5', i:'#b34a24'},
+  '宿泊':   {e:'🏨', c:'#8a6fd4', s:'#eee9fb', i:'#5b41a8'},
+  '買い物': {e:'🛍️', c:'#e0577f', s:'#fce7ee', i:'#b02b55'},
+  '体験':   {e:'🎫', c:'#d99b25', s:'#fbf0dc', i:'#96690d'},
+  '温泉':   {e:'♨️', c:'#e0577f', s:'#fce7ee', i:'#b02b55'},
+  '集合':   {e:'📣', c:'#4aa8b8', s:'#e2f3f6', i:'#1f6d7a'},
+  '自由':   {e:'🕊️', c:'#9aa0a6', s:'#eeefF1', i:'#5f6368'},
+};
+const CAT_DEFAULT = {e:'📌', c:'#9aa0a6', s:'#eef0f2', i:'#5f6368'};
+const catOf = v => CATS[String(v||'').trim()] || CAT_DEFAULT;
+
+const MOVE_ICON = {
+  '徒歩':'🚶','歩き':'🚶','車':'🚗','レンタカー':'🚗','タクシー':'🚕','バス':'🚌',
+  '電車':'🚃','JR':'🚉','新幹線':'🚄','飛行機':'✈️','船':'⛴️','フェリー':'⛴️',
+  '自転車':'🚲','路面電車':'🚋','ロープウェイ':'🚡',
+};
+const TRAVELMODE = {
+  '徒歩':'walking','歩き':'walking','自転車':'bicycling',
+  '車':'driving','レンタカー':'driving','タクシー':'driving',
+  'バス':'transit','電車':'transit','JR':'transit','新幹線':'transit',
+  '路面電車':'transit','飛行機':'transit','船':'transit','フェリー':'transit',
+};
+
+/* ================================ ユーティリティ =========================== */
+const $  = s => document.querySelector(s);
+const el = (t, cls, html) => { const n=document.createElement(t); if(cls)n.className=cls; if(html!=null)n.innerHTML=html; return n; };
+const esc = s => String(s??'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const norm = s => String(s??'').trim().toLowerCase().replace(/[\s　_-]/g,'');
+
+let toastTimer;
+function toast(msg){
+  const t=$('#toast'); t.textContent=msg; t.classList.add('on');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('on'), 2600);
+}
+
+/* ------------------------- スプレッドシートを読む ------------------------- */
+const SHEET_ID = new URLSearchParams(location.search).get('id') || CONFIG.DEFAULT_SHEET_ID;
+const CACHE_KEY = 'tabi:' + SHEET_ID;
+
+// name を省略すると「いちばん左のシート」を読みます
+async function fetchTable(name){
+  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq`
+            + `?tqx=out:json&headers=1`
+            + (name ? `&sheet=${encodeURIComponent(name)}` : '');
+  const res = await fetch(url, {cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const txt = await res.text();
+  const a = txt.indexOf('{'), b = txt.lastIndexOf('}');
+  if(a < 0) throw new Error('bad response');
+  const json = JSON.parse(txt.slice(a, b + 1));
+  if(json.status === 'error') throw new Error('sheet not found');
+  return {sig: String(json.sig || ''), rows: gvizToRows(json.table)};
+}
+
+// gviz のテーブルを [{列名: {v, f}}] の配列にする
+function gvizToRows(table){
+  const heads = (table.cols||[]).map((c,i) => String(c.label||'').trim() || `col${i}`);
+  return (table.rows||[]).map(r => {
+    const o = {__raw:{}};
+    heads.forEach((h,i) => {
+      const cell = (r.c||[])[i];
+      o[h] = cellText(cell);
+      o.__raw[h] = cell ? cell.v : null;
+    });
+    return o;
+  }).filter(o => heads.some(h => o[h] !== ''));
+}
+
+// セルを表示用の文字列に。日付/時刻は書式付きの値を優先。
+function cellText(cell){
+  if(!cell) return '';
+  if(cell.f != null && cell.f !== '') return String(cell.f).trim();
+  const v = cell.v;
+  if(v == null) return '';
+  if(typeof v === 'string' && v.startsWith('Date(')){
+    const p = v.slice(5,-1).split(',').map(Number);
+    if(p.length >= 3 && p[0] > 1900) return `${p[0]}/${p[1]+1}/${p[2]}`;
+    return `${String(p[3]||0).padStart(2,'0')}:${String(p[4]||0).padStart(2,'0')}`;
+  }
+  if(typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+  return String(v).trim();
+}
+
+// 別名リストから列を引く
+function pick(row, key){
+  const wants = ALIAS[key] || [];
+  for(const k of Object.keys(row)){
+    if(k === '__raw') continue;
+    if(wants.includes(norm(k))) return row[k];
+  }
+  return '';
+}
+
+/* シートを役割ごとに読み分ける。
+ *
+ * 注意: Google は「存在しないシート名」を指定されてもエラーにせず、
+ * いちばん左のシートを返してきます。そのままだと、まだ作っていない
+ * 「持ち物」などに行程の中身が入り込んでしまいます。
+ * そこで先にダミー名で問い合わせて既定シートの署名(sig)を控えておき、
+ * 同じ署名が返ってきたものは「そのシートは無い」と判断します。
+ */
+const ROLE_ORDER = ['itinerary','settings','members','packing','budget','stay','transport','candidates','info'];
+
+async function loadAllSheets(){
+  let fallback = null;
+  try { fallback = await fetchTable('__tabi_probe__' + Date.now()); } catch(e){}
+  const fallbackSig = fallback ? fallback.sig : null;
+
+  const found = {}, sawFallback = {};
+  await Promise.all(ROLE_ORDER.map(async role => {
+    for(const name of CONFIG.SHEETS[role]){
+      let t;
+      try { t = await fetchTable(name); } catch(e){ continue; }
+      if(fallbackSig && t.sig === fallbackSig){ sawFallback[role] = true; continue; }
+      found[role] = t.rows;
+      return;
+    }
+  }));
+
+  // 既定シートは、優先度がいちばん高い役割ひとつだけが受け取る
+  if(fallback){
+    const claim = ROLE_ORDER.find(r => !found[r] && sawFallback[r])
+               || (!found.itinerary ? 'itinerary' : null);
+    if(claim) found[claim] = fallback.rows;
+  }
+  return found;
+}
+
+/* ------------------------------ データ整形 -------------------------------- */
+function parseDateKey(s){
+  const t = String(s||'').trim();
+  if(!t) return {key:'', sort:'zzzz', label:'日付未定', wd:''};
+  const m = t.match(/(\d{4})[\/\-年.](\d{1,2})[\/\-月.](\d{1,2})/)
+         || t.match(/^(\d{1,2})[\/\-月.](\d{1,2})/);
+  let y, mo, d;
+  if(m && m.length === 4){ y=+m[1]; mo=+m[2]; d=+m[3]; }
+  else if(m){ y=new Date().getFullYear(); mo=+m[1]; d=+m[2]; }
+  if(y){
+    const dt = new Date(y, mo-1, d);
+    const wd = '日月火水木金土'[dt.getDay()];
+    return {
+      key: `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`,
+      sort: `${y}${String(mo).padStart(2,'0')}${String(d).padStart(2,'0')}`,
+      label: `${mo}月${d}日`, short:`${mo}/${d}`, wd, date: dt,
+    };
+  }
+  return {key:t, sort:'zzz'+t, label:t, short:t, wd:''};
+}
+
+function parseTime(s){
+  const m = String(s||'').match(/(\d{1,2})\s*[:時]\s*(\d{1,2})?/);
+  if(!m) return null;
+  return {h:+m[1], m:+(m[2]||0), text:`${m[1]}:${String(m[2]||'0').padStart(2,'0')}`, mins:+m[1]*60 + +(m[2]||0)};
+}
+
+function isTentative(status){
+  const s = String(status||'').trim();
+  return /候補|未定|仮|検討|maybe|tbd/i.test(s);
+}
+function isHidden(row){
+  const v = String(pick(row,'show')||'').trim().toUpperCase();
+  return v === 'FALSE' || v === '×' || v === '非表示' || v === 'NO';
+}
+
+function buildItinerary(rows){
+  const items = [];
+  (rows||[]).forEach((r, idx) => {
+    if(isHidden(r)) return;
+    const name = pick(r,'name');
+    const dateRaw = pick(r,'date');
+    if(!name && !dateRaw) return;
+    const d = parseDateKey(dateRaw);
+    const t = parseTime(pick(r,'start'));
+    items.push({
+      idx, d, t,
+      end:      parseTime(pick(r,'end')),
+      cat:      pick(r,'cat'),
+      name:     name || '(名称未定)',
+      place:    pick(r,'place'),
+      latlng:   pick(r,'latlng'),
+      move:     pick(r,'move'),
+      dur:      pick(r,'dur'),
+      cost:     pick(r,'cost'),
+      url:      pick(r,'url'),
+      photo:    pick(r,'photo'),
+      map:      pick(r,'map'),
+      file:     pick(r,'file'),
+      rating:   pick(r,'rating'),
+      want:     pick(r,'want'),
+      note:     pick(r,'note'),
+      booking:  pick(r,'booking'),
+      tel:      pick(r,'tel'),
+      status:   pick(r,'status'),
+    });
+  });
+
+  // 日付 → 時刻 → 入力順 で並べる
+  items.sort((a,b) =>
+    a.d.sort.localeCompare(b.d.sort)
+    || (a.t?.mins ?? 99999) - (b.t?.mins ?? 99999)
+    || a.idx - b.idx
+  );
+
+  const days = [];
+  const byKey = new Map();
+  items.forEach(it => {
+    if(!byKey.has(it.d.key)){
+      const day = {...it.d, items:[]};
+      byKey.set(it.d.key, day);
+      days.push(day);
+    }
+    byKey.get(it.d.key).items.push(it);
+  });
+  days.forEach((d,i) => d.n = i + 1);
+  return days;
+}
+
+/* ------------------------- Google マップ用のURL --------------------------- */
+function target(it){
+  return String(it.place || it.name || '').trim();
+}
+function gmapSearch(it){
+  if(/^https?:\/\//i.test(it.map)) return it.map;           // マップ列にURLがあれば優先
+  const ll = coordsOf(it);
+  if(ll) return `https://www.google.com/maps/search/?api=1&query=${ll[0]},${ll[1]}`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(target(it))}`;
+}
+function gmapRoute(it){
+  const ll = coordsOf(it);
+  const dest = ll ? `${ll[0]},${ll[1]}` : target(it);
+  const mode = TRAVELMODE[String(it.move||'').trim()] || 'transit';
+  // origin を省略すると Google マップ側が「現在地」を使ってくれます
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}&travelmode=${mode}`;
+}
+function gmapNearby(it, kw){
+  const ll = coordsOf(it);
+  if(ll) return `https://www.google.com/maps/search/${encodeURIComponent(kw)}/@${ll[0]},${ll[1]},15z`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(target(it) + ' ' + kw)}`;
+}
+// その日の全地点を1本のルートにして Google マップで開く
+function gmapDayRoute(day){
+  const pts = day.items.map(target).filter(Boolean);
+  if(pts.length < 2) return null;
+  const origin = pts[0], dest = pts[pts.length-1];
+  const way = pts.slice(1,-1).slice(0,8);   // Google の無料URLは経由地9件程度が上限
+  let u = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(dest)}`;
+  if(way.length) u += `&waypoints=${way.map(encodeURIComponent).join('|')}`;
+  return u + '&travelmode=driving';
+}
+// Google ドライブの共有リンクを画像URLに変換
+function imgUrl(u){
+  const s = String(u||'').trim();
+  if(!s) return '';
+  const m = s.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)([\w-]{20,})/);
+  if(m) return `https://drive.google.com/thumbnail?id=${m[1]}&sz=w1200`;
+  return /^https?:\/\//i.test(s) ? s : '';
+}
+function coordsOf(it){
+  const m = String(it.latlng||'').match(/(-?\d+\.\d+)\s*[,、]\s*(-?\d+\.\d+)/);
+  if(m) return [parseFloat(m[1]), parseFloat(m[2])];
+  if(it._geo) return it._geo;
+  return null;
+}
+
+/* ================================ 画面描画 ================================= */
+const STATE = { data:null, tab:'plan', day:0, map:null, layer:null };
+
+function renderCover(){
+  const s = STATE.data.settings || {};
+  const days = STATE.data.days || [];
+  if(s['テーマ色']) document.documentElement.style.setProperty('--accent', s['テーマ色']);
+  const img = imgUrl(s['表紙画像'] || s['カバー画像']);
+  if(img){
+    $('#cover').classList.add('has-img');
+    $('#cover').style.setProperty('--cover-img', `url("${img}")`);
+  }
+  document.title = s['タイトル'] || document.title;
+  $('#ttl').textContent = s['タイトル'] || '旅のしおり';
+  $('#kicker').textContent = s['英字見出し'] || 'TRAVEL NOTE';
+  $('#sub').textContent = s['サブタイトル'] || s['ひとこと'] || '';
+
+  const meta = $('#meta'); meta.innerHTML = '';
+  const real = days.filter(d => d.date);
+  if(real.length){
+    const a = real[0], b = real[real.length-1];
+    meta.appendChild(el('span','pill',
+      `📅 ${a.label}${b.key!==a.key ? '〜'+b.label : ''}・${real.length}日間`));
+  }
+  const n = (STATE.data.members||[]).length;
+  if(n) meta.appendChild(el('span','pill', `👥 ${n}人`));
+  if(s['集合場所']) meta.appendChild(el('span','pill', `📍 ${s['集合場所']}`));
+}
+
+function renderTabs(){
+  const d = STATE.data;
+  const tabs = [['plan','🗒 しおり', true]];
+  if(d.days.some(x => x.items.some(i => coordsOf(i) || target(i)))) tabs.push(['map','🗺 地図', true]);
+  if((d.packing||[]).length)    tabs.push(['pack','🎒 持ち物', true]);
+  if((d.budget||[]).length || d.days.some(x=>x.items.some(i=>i.cost))) tabs.push(['money','💰 お金', true]);
+  if((d.stay||[]).length || (d.transport||[]).length) tabs.push(['book','🎫 予約', true]);
+  if((d.candidates||[]).length) tabs.push(['idea','💡 候補', true]);
+  if((d.members||[]).length || (d.info||[]).length) tabs.push(['info','ℹ️ 情報', true]);
+
+  const nav = $('#tabs'); nav.innerHTML = '';
+  tabs.forEach(([id, label]) => {
+    const b = el('button','tab', label);
+    b.setAttribute('role','tab');
+    b.setAttribute('aria-selected', String(STATE.tab === id));
+    b.onclick = () => { STATE.tab = id; render(); window.scrollTo({top:0, behavior:'smooth'}); };
+    nav.appendChild(b);
+  });
+}
+
+function renderDayNav(){
+  const nav = $('#daynav');
+  const days = STATE.data.days;
+  const show = (STATE.tab === 'plan' || STATE.tab === 'map') && days.length > 1;
+  nav.hidden = !show;
+  if(!show) return;
+  nav.innerHTML = '';
+  if(STATE.tab === 'plan'){
+    const all = el('button','daychip' + (STATE.day === -1 ? ' on' : ''), '全日程');
+    all.onclick = () => { STATE.day = -1; render(); };
+    nav.appendChild(all);
+  }
+  days.forEach((d,i) => {
+    const c = el('button','daychip' + (STATE.day === i ? ' on' : ''),
+      `<b>${esc(d.short || d.label)}</b>${d.wd ? `<span>(${d.wd})</span>` : ''}`);
+    c.onclick = () => {
+      STATE.day = i;
+      if(STATE.tab === 'plan'){
+        render();
+        const t = document.getElementById('day' + i);
+        if(t) t.scrollIntoView({behavior:'smooth', block:'start'});
+      } else render();
+    };
+    nav.appendChild(c);
+  });
+}
+
+/* --------------------------------- しおり --------------------------------- */
+function nowInfo(){
+  const now = new Date();
+  const key = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  return {key, mins: now.getHours()*60 + now.getMinutes()};
+}
+
+function itemCard(it, prev, isNow){
+  const c = catOf(it.cat);
+  const wrap = el('div','item' + (isTentative(it.status) ? ' tentative' : '') + (isNow ? ' now' : ''));
+
+  const rail = el('div','rail');
+  rail.innerHTML = it.t
+    ? `<div class="t1">${esc(it.t.text)}</div>${it.end ? `<div class="t2">↓${esc(it.end.text)}</div>` : ''}`
+    : `<div class="t2">未定</div>`;
+  wrap.appendChild(rail);
+
+  const card = el('div','card');
+  card.style.setProperty('--cat', c.c);
+  card.style.setProperty('--cat-soft', c.s);
+  card.style.setProperty('--cat-ink', c.i);
+
+  const top = el('div','toprow');
+  top.appendChild(el('span','cat', `${c.e} ${esc(it.cat || 'その他')}`));
+  if(isNow) top.appendChild(el('span','badge now','いま'));
+  if(isTentative(it.status)) top.appendChild(el('span','badge tent', esc(it.status)));
+  card.appendChild(top);
+
+  card.appendChild(el('div','title', esc(it.name)));
+  if(it.place) card.appendChild(el('div','place', '📍 ' + esc(it.place)));
+  if(it.want)  card.appendChild(el('div','want', '✨ ' + esc(it.want)));
+  if(it.note)  card.appendChild(el('div','note', esc(it.note)));
+
+  const facts = el('div','facts');
+  if(it.cost)    facts.appendChild(el('span','fact', '💴 ' + esc(it.cost)));
+  if(it.rating)  facts.appendChild(el('span','fact', '⭐ ' + esc(it.rating)));
+  if(it.booking) facts.appendChild(el('span','fact', '🎫 ' + esc(it.booking)));
+  if(it.tel)     facts.appendChild(el('span','fact', '☎️ ' + esc(it.tel)));
+  if(facts.children.length) card.appendChild(facts);
+
+  const photo = imgUrl(it.photo);
+  if(photo){
+    const im = el('img','photo');
+    im.src = photo; im.alt = it.name; im.loading = 'lazy';
+    im.onerror = () => im.remove();
+    card.appendChild(im);
+  }
+
+  const acts = el('div','acts');
+  const add = (href, cls, label) => {
+    const a = el('a','act' + (cls ? ' ' + cls : ''), label);
+    a.href = href; a.target = '_blank'; a.rel = 'noopener';
+    acts.appendChild(a);
+  };
+  if(target(it)){
+    add(gmapRoute(it), 'primary', '🧭 ここへ行く');
+    add(gmapSearch(it), '', '🗺 地図');
+    add(gmapNearby(it, '観光'), '', '👀 周辺');
+  }
+  if(/^https?:\/\//i.test(it.url))  add(it.url, '', '🔗 参考ページ');
+  if(/^https?:\/\//i.test(it.file)) add(it.file, '', '📎 資料');
+  if(it.tel) add('tel:' + String(it.tel).replace(/[^\d+]/g,''), '', '☎️ 電話');
+  if(acts.children.length) card.appendChild(acts);
+
+  wrap.appendChild(card);
+
+  // 「ここへ来るまでの移動」を前のカードとの間に差し込む
+  if(it.move || it.dur){
+    const ic = MOVE_ICON[String(it.move||'').trim()] || '➡️';
+    const parts = [it.move, it.dur].filter(Boolean).map(esc).join(' ・ ');
+    const leg = el('div','leg', `${ic} ${parts}`);
+    return [leg, wrap];
+  }
+  return [wrap];
+}
+
+function viewPlan(){
+  const main = $('#main'); main.innerHTML = '';
+  const days = STATE.data.days;
+  if(!days.length){
+    main.appendChild(el('div','empty',
+      `<span class="big">📝</span>まだ予定が入っていません。<br>スプレッドシートの「行程」シートに<br>行を追加すると、ここに並びます。`));
+    return;
+  }
+  const N = nowInfo();
+  const list = STATE.day === -1 ? days.map((d,i)=>[d,i]) : days.map((d,i)=>[d,i]).filter(([,i]) => i === STATE.day);
+
+  list.forEach(([day, i]) => {
+    const sec = el('section','day'); sec.id = 'day' + i;
+    const head = el('div','day-head');
+    head.appendChild(el('div','day-num', `DAY<b>${day.n}</b>`));
+    const tx = el('div');
+    tx.appendChild(el('p','d-date', esc(day.label) + (day.wd ? `（${day.wd}）` : '')));
+    const sum = [`${day.items.length}件`];
+    const cost = day.items.reduce((s,x) => s + (parseFloat(String(x.cost).replace(/[^\d.]/g,'')) || 0), 0);
+    if(cost) sum.push('約' + cost.toLocaleString() + '円');
+    tx.appendChild(el('p','d-sub', sum.join('・')));
+    head.appendChild(tx);
+    sec.appendChild(head);
+
+    const route = gmapDayRoute(day);
+    if(route){
+      const a = el('a','act','🚗 この日のルートをGoogleマップで開く');
+      a.href = route; a.target = '_blank'; a.rel = 'noopener';
+      a.style.marginBottom = '10px';
+      sec.appendChild(a);
+    }
+
+    // 「いま進行中」の判定は今日の日付のときだけ
+    let nowIdx = -1;
+    if(day.key === N.key){
+      day.items.forEach((it, k) => {
+        if(it.t && it.t.mins <= N.mins) nowIdx = k;
+      });
+      const cur = day.items[nowIdx];
+      if(cur && cur.end && cur.end.mins < N.mins && day.items[nowIdx+1]) nowIdx = nowIdx + 1;
+    }
+
+    day.items.forEach((it, k) => {
+      itemCard(it, day.items[k-1], k === nowIdx).forEach(n => sec.appendChild(n));
+    });
+    main.appendChild(sec);
+  });
+
+  if(STATE.day === -1 && days.some(d => d.key === N.key)){
+    setTimeout(() => {
+      const t = document.querySelector('.item.now');
+      if(t) t.scrollIntoView({behavior:'smooth', block:'center'});
+    }, 350);
+  }
+}
+
+/* --------------------------------- 地図 ----------------------------------- */
+async function viewMap(){
+  const main = $('#main'); main.innerHTML = '';
+  const day = STATE.data.days[Math.max(0, STATE.day)] || STATE.data.days[0];
+  if(!day){ main.appendChild(el('div','empty','<span class="big">🗺</span>表示できる場所がありません。')); return; }
+
+  const bar = el('div','mapbar');
+  const route = gmapDayRoute(day);
+  if(route){
+    const a = el('a','act primary','🚗 この日のルートを開く');
+    a.href = route; a.target='_blank'; a.rel='noopener'; bar.appendChild(a);
+  }
+  main.appendChild(bar);
+
+  const box = el('div'); box.id = 'map'; main.appendChild(box);
+  const info = el('p','foot','ピンをタップすると、そこへの経路を開けます。座標が無い場所は名前から自動で探しています。');
+  main.appendChild(info);
+
+  if(STATE.map){ STATE.map.remove(); STATE.map = null; }
+  const map = L.map('map', {scrollWheelZoom:false});
+  STATE.map = map;
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors',
+  }).addTo(map);
+  map.setView([43.06, 141.35], 9);   // 仮の初期位置（データが入ったら自動で合わせます）
+
+  const pts = [];
+  const draw = () => {
+    if(STATE.layer) STATE.layer.remove();
+    STATE.layer = L.layerGroup().addTo(map);
+    const bounds = [];
+    day.items.forEach((it, k) => {
+      const ll = coordsOf(it);
+      if(!ll) return;
+      bounds.push(ll);
+      const icon = L.divIcon({
+        className:'', iconSize:[27,27], iconAnchor:[13,26], popupAnchor:[0,-24],
+        html:`<div class="mappin"><span>${k+1}</span></div>`,
+      });
+      L.marker(ll, {icon}).addTo(STATE.layer).bindPopup(
+        `<div class="pop">
+           <div class="pop-t">${it.t ? esc(it.t.text) : '時間未定'}・${esc(it.cat||'')}</div>
+           <div class="pop-n">${esc(it.name)}</div>
+           ${it.place ? `<div class="pop-p">${esc(it.place)}</div>` : ''}
+           <a href="${gmapRoute(it)}" target="_blank" rel="noopener">🧭 ここへ行く</a>
+           <a class="sec" href="${gmapNearby(it,'観光')}" target="_blank" rel="noopener">👀 周辺</a>
+           ${/^https?:\/\//i.test(it.url) ? `<a class="sec" href="${esc(it.url)}" target="_blank" rel="noopener">🔗 HP</a>` : ''}
+           ${it.latlng ? '' : `<a class="sec" href="javascript:void 0" onclick="copyLL(${ll[0]},${ll[1]})">📋 座標</a>`}
+         </div>`);
+      pts.push(ll);
+    });
+    if(bounds.length === 1) map.setView(bounds[0], 14);
+    else if(bounds.length > 1) map.fitBounds(bounds, {padding:[42,42]});
+    if(bounds.length > 1){
+      L.polyline(bounds, {color:getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#e8734a',
+                          weight:3, opacity:.65, dashArray:'7,7'}).addTo(STATE.layer);
+    }
+  };
+  draw();
+
+  // 座標が無いものを補う（1件ずつゆっくり・結果は端末に保存）
+  const anchor = await resolveAnchor();
+  const todo = day.items.filter(it => !coordsOf(it) && target(it));
+  for(const it of todo){
+    if(STATE.tab !== 'map') return;   // 画面を離れたら中断
+    const ll = await geocode(geoQueries(it, STATE.area), anchor);
+    if(ll){ it._geo = ll; draw(); }
+  }
+  if(!day.items.some(it => coordsOf(it))){
+    info.textContent = '場所を特定できませんでした。「場所」列に住所を入れるか、「緯度経度」列に 41.7687,140.7288 のように入れると確実に表示されます。';
+  }
+}
+
+/* --- 住所・地名から座標を求める（OpenStreetMap の無料サービス・キー不要） ---
+ * 同じ地名は全国にあるので、「設定」シートの エリア を基準にして
+ * その周辺を優先して探します。見つからなければ範囲を広げて再挑戦。 */
+const GEO_KEY = 'tabi:geo';
+const geoCache = JSON.parse(localStorage.getItem(GEO_KEY) || '{}');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function nominatim(q, near){
+  let u = `https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=ja&q=${encodeURIComponent(q)}`;
+  if(near){
+    const d = 0.9;   // 基準地点から およそ100km 四方
+    u += `&viewbox=${near[1]-d},${near[0]+d},${near[1]+d},${near[0]-d}&bounded=1`;
+  }
+  try{
+    const r = await fetch(u);
+    if(!r.ok) return null;
+    const j = await r.json();
+    if(j && j[0]) return [parseFloat(j[0].lat), parseFloat(j[0].lon)];
+  }catch(e){ /* オフライン等 */ }
+  return null;
+}
+
+// 検索に使う語を、当たりやすい順に組み立てる
+function geoQueries(it, area){
+  const place = String(it.place || '').trim();
+  const name  = String(it.name || '').split(/[→⇒~〜]/)[0].trim();
+  const noBanchi = place.replace(/[\d０-９]+[-−ー－‐][\d０-９-−ー－‐]*\s*$/, '').trim();
+  const out = [];
+  if(place) out.push(place);
+  if(noBanchi && noBanchi !== place) out.push(noBanchi);
+  if(name)   out.push(area ? `${area} ${name}` : name);
+  if(name && area) out.push(name);
+  return [...new Set(out.filter(Boolean))];
+}
+
+async function geocode(queries, near){
+  const list = (queries || []).filter(Boolean);
+  if(!list.length) return null;
+  const key = (near ? near.map(n => n.toFixed(1)).join(',') : 'any') + '|' + list.join('|');
+  if(key in geoCache) return geoCache[key];
+
+  const passes = near ? [near, null] : [null];
+  for(const anchor of passes){
+    for(const q of list){
+      const hit = await nominatim(q, anchor);
+      if(hit){
+        geoCache[key] = hit;
+        localStorage.setItem(GEO_KEY, JSON.stringify(geoCache));
+        return hit;
+      }
+      await sleep(1100);   // OpenStreetMap への配慮（1秒に1回まで）
+    }
+  }
+  geoCache[key] = null;    // 失敗も覚えておき、毎回問い合わせないようにする
+  localStorage.setItem(GEO_KEY, JSON.stringify(geoCache));
+  return null;
+}
+
+// 旅行エリアの中心を決める（明示的な緯度経度 → 設定のエリア の順）
+async function resolveAnchor(){
+  if(STATE.anchor !== undefined) return STATE.anchor;
+  const s = STATE.data.settings || {};
+  const area = String(s['エリア'] || s['地域'] || s['行き先'] || '').trim();
+  STATE.area = area;
+  for(const d of STATE.data.days){
+    for(const it of d.items){
+      const m = String(it.latlng || '').match(/(-?\d+\.\d+)\s*[,、]\s*(-?\d+\.\d+)/);
+      if(m){ STATE.anchor = [parseFloat(m[1]), parseFloat(m[2])]; return STATE.anchor; }
+    }
+  }
+  STATE.anchor = area ? await nominatim(area, null) : null;
+  return STATE.anchor;
+}
+
+// popup の「座標をコピー」用
+window.copyLL = function(lat, lng){
+  const t = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  (navigator.clipboard?.writeText(t) || Promise.reject()).then(
+    () => toast(`${t} をコピーしました。「緯度経度」列に貼れます`),
+    () => toast(t)
+  );
+};
+
+/* ------------------------- そのほかのタブ（表形式） ------------------------ */
+function simpleTable(rows, opts){
+  const {title, main:mainKey, sub:subKeys, right:rightKey, link:linkKey} = opts;
+  const p = el('div','panel');
+  if(title) p.appendChild(el('h2', null, title));
+  rows.forEach(r => {
+    const row = el('div','row');
+    const k = el('div','k');
+    const name = firstOf(r, mainKey);
+    const subtxt = subKeys.map(s => firstOf(r, [s])).filter(Boolean).join(' ・ ');
+    k.innerHTML = `<b>${esc(name)}</b>${subtxt ? `<span>${esc(subtxt)}</span>` : ''}`;
+    row.appendChild(k);
+    const rv = rightKey ? firstOf(r, rightKey) : '';
+    if(rv) row.appendChild(el('div','v', esc(rv)));
+    const url = linkKey ? firstOf(r, linkKey) : '';
+    if(/^https?:\/\//i.test(url)){
+      const a = el('a','act','🔗'); a.href = url; a.target='_blank'; a.rel='noopener';
+      row.appendChild(a);
+    }
+    p.appendChild(row);
+  });
+  return p;
+}
+function firstOf(row, keys){
+  for(const k of Object.keys(row)){
+    if(k === '__raw') continue;
+    if(keys.some(w => norm(k) === norm(w))) return row[k];
+  }
+  return '';
+}
+function allKeys(row){ return Object.keys(row).filter(k => k !== '__raw'); }
+
+function viewPack(){
+  const main = $('#main'); main.innerHTML = '';
+  const rows = STATE.data.packing || [];
+  const p = el('div','panel');
+  p.appendChild(el('h2', null, '🎒 持ち物リスト'));
+  rows.forEach(r => {
+    const nm = firstOf(r, ['品名','持ち物','item','名称','品目']);
+    if(!nm) return;
+    const who = firstOf(r, ['担当','だれ','who','担当者']);
+    const num = firstOf(r, ['個数','数','qty']);
+    const done = /TRUE|✓|済|○/i.test(firstOf(r, ['チェック','済','done','完了']));
+    const line = el('div','checkline' + (done ? ' done' : ''));
+    line.appendChild(el('div','box', done ? '✓' : ''));
+    line.appendChild(el('span', null,
+      `${esc(nm)}${num ? ` <small style="color:var(--text-dim)">×${esc(num)}</small>` : ''}${who ? ` <small style="color:var(--text-dim)">（${esc(who)}）</small>` : ''}`));
+    p.appendChild(line);
+  });
+  main.appendChild(p);
+  main.appendChild(el('p','foot','チェックはスプレッドシートの「チェック」列に ✓ / TRUE を入れると反映されます。'));
+}
+
+function viewMoney(){
+  const main = $('#main'); main.innerHTML = '';
+  const rows = STATE.data.budget || [];
+  let total = 0;
+  if(rows.length){
+    const p = el('div','panel');
+    p.appendChild(el('h2', null, '💰 費用'));
+    rows.forEach(r => {
+      const nm = firstOf(r, ['項目','名称','内容','item']);
+      if(!nm) return;
+      const amt = firstOf(r, ['金額','費用','予算','cost']);
+      const who = firstOf(r, ['支払','支払者','担当','who']);
+      total += parseFloat(String(amt).replace(/[^\d.]/g,'')) || 0;
+      const row = el('div','row');
+      row.appendChild(el('div','k', `<b>${esc(nm)}</b>${who ? `<span>${esc(who)}</span>` : ''}`));
+      row.appendChild(el('div','v', esc(amt)));
+      p.appendChild(row);
+    });
+    const t = el('div','total');
+    t.appendChild(el('span', null, '合計'));
+    t.appendChild(el('b', null, '¥' + total.toLocaleString()));
+    p.appendChild(t);
+    main.appendChild(p);
+  }
+  // 行程シートの費用も日別に集計
+  const days = STATE.data.days.filter(d => d.items.some(i => i.cost));
+  if(days.length){
+    const p = el('div','panel');
+    p.appendChild(el('h2', null, '🗒 行程に入っている費用'));
+    let sum = 0;
+    days.forEach(d => {
+      const c = d.items.reduce((s,x) => s + (parseFloat(String(x.cost).replace(/[^\d.]/g,'')) || 0), 0);
+      sum += c;
+      const row = el('div','row');
+      row.appendChild(el('div','k', `<b>${esc(d.label)}</b><span>${d.items.length}件</span>`));
+      row.appendChild(el('div','v', '¥' + c.toLocaleString()));
+      p.appendChild(row);
+    });
+    const t = el('div','total');
+    t.appendChild(el('span', null, '小計'));
+    t.appendChild(el('b', null, '¥' + sum.toLocaleString()));
+    p.appendChild(t);
+    main.appendChild(p);
+  }
+  const n = (STATE.data.members||[]).length;
+  if(n && total){
+    main.appendChild(el('p','foot', `メンバー${n}人で割ると、ひとり約 ¥${Math.round(total/n).toLocaleString()} です。`));
+  }
+}
+
+function viewBook(){
+  const main = $('#main'); main.innerHTML = '';
+  const stay = STATE.data.stay || [];
+  const tr = STATE.data.transport || [];
+  if(stay.length) main.appendChild(simpleTable(stay, {
+    title:'🏨 宿泊',
+    main:['施設名','宿','名称','ホテル'],
+    sub:['日付','チェックイン','チェックアウト','住所','電話','予約番号'],
+    right:['金額','料金'], link:['url','リンク','参考hp','hp'],
+  }));
+  if(tr.length) main.appendChild(simpleTable(tr, {
+    title:'🎫 交通・チケット',
+    main:['便名','名称','種別','列車','内容'],
+    sub:['出発','出発地','出発時刻','到着','到着地','到着時刻','座席','予約番号'],
+    right:['金額','料金'], link:['url','リンク','参考hp','hp'],
+  }));
+  if(!stay.length && !tr.length) main.appendChild(el('div','empty','<span class="big">🎫</span>「宿泊」「交通」シートを作ると、ここに出ます。'));
+}
+
+function viewIdea(){
+  const main = $('#main'); main.innerHTML = '';
+  const rows = STATE.data.candidates || [];
+  main.appendChild(el('p','foot','まだ予定に入れていない行き先の候補です。決まったら「行程」シートへ移してください。'));
+  const p = el('div','panel');
+  p.appendChild(el('h2', null, '💡 行き先の候補'));
+  rows.forEach(r => {
+    const nm = firstOf(r, ['名称','候補','スポット','名前','name']);
+    if(!nm) return;
+    const cat = firstOf(r, ['カテゴリ','区分','種別']);
+    const area = firstOf(r, ['エリア','地域','場所']);
+    const dur = firstOf(r, ['所要','所要時間','滞在']);
+    const pr = firstOf(r, ['優先度','おすすめ度','評価']);
+    const url = firstOf(r, ['url','参考hp','リンク','hp']);
+    const note = firstOf(r, ['備考','メモ','コメント']);
+    const c = catOf(cat);
+    const row = el('div','row');
+    row.appendChild(el('div','k',
+      `<b>${c.e} ${esc(nm)}</b><span>${[area, dur, note].filter(Boolean).map(esc).join(' ・ ')}</span>`));
+    if(pr) row.appendChild(el('div','v', esc(pr)));
+    const acts = el('div','acts'); acts.style.marginTop = '0';
+    const a1 = el('a','act','🗺');
+    a1.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((area ? area + ' ' : '') + nm)}`;
+    a1.target='_blank'; a1.rel='noopener'; acts.appendChild(a1);
+    if(/^https?:\/\//i.test(url)){
+      const a2 = el('a','act','🔗'); a2.href = url; a2.target='_blank'; a2.rel='noopener'; acts.appendChild(a2);
+    }
+    row.appendChild(acts);
+    p.appendChild(row);
+  });
+  main.appendChild(p);
+}
+
+function viewInfo(){
+  const main = $('#main'); main.innerHTML = '';
+  const mem = STATE.data.members || [];
+  if(mem.length){
+    const p = el('div','panel');
+    p.appendChild(el('h2', null, '👥 メンバー'));
+    const box = el('div','people');
+    mem.forEach(r => {
+      const nm = firstOf(r, ['名前','氏名','name','メンバー']);
+      if(!nm) return;
+      const ic = firstOf(r, ['アイコン','絵文字','emoji']) || nm.slice(0,1);
+      const role = firstOf(r, ['役割','担当','role']);
+      const pill = el('div','person');
+      pill.appendChild(el('div','av', esc(ic)));
+      pill.appendChild(el('span', null, `${esc(nm)}${role ? ` <small style="color:var(--text-dim);font-weight:600">${esc(role)}</small>` : ''}`));
+      box.appendChild(pill);
+    });
+    p.appendChild(box);
+    main.appendChild(p);
+  }
+  const info = STATE.data.info || [];
+  if(info.length){
+    const p = el('div','panel');
+    p.appendChild(el('h2', null, 'ℹ️ 基本情報・おやくそく'));
+    info.forEach(r => {
+      const ks = allKeys(r);
+      const k = r[ks[0]], v = ks.slice(1).map(x => r[x]).filter(Boolean).join(' / ');
+      if(!k) return;
+      const row = el('div','row');
+      row.appendChild(el('div','k', `<b>${esc(k)}</b><span>${esc(v)}</span>`));
+      p.appendChild(row);
+    });
+    main.appendChild(p);
+  }
+  const s = STATE.data.settings || {};
+  const extras = Object.entries(s).filter(([k]) =>
+    !['タイトル','サブタイトル','テーマ色','表紙画像','カバー画像','英字見出し','ひとこと'].includes(k));
+  if(extras.length){
+    const p = el('div','panel');
+    p.appendChild(el('h2', null, '📋 そのほか'));
+    extras.forEach(([k,v]) => {
+      const row = el('div','row');
+      const isUrl = /^https?:\/\//i.test(v);
+      const isTel = /電話|連絡先|tel/i.test(k) && /\d{6,}/.test(v);
+      row.appendChild(el('div','k', `<b>${esc(k)}</b><span>${
+        isUrl ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>`
+        : isTel ? `<a href="tel:${esc(String(v).replace(/[^\d+]/g,''))}">${esc(v)}</a>`
+        : esc(v)}</span>`));
+      p.appendChild(row);
+    });
+    main.appendChild(p);
+  }
+}
+
+/* ------------------------------- 描画の入口 -------------------------------- */
+function render(){
+  $('#cover').classList.toggle('compact', STATE.tab !== 'plan');
+  renderTabs();
+  renderDayNav();
+  ({
+    plan: viewPlan, map: viewMap, pack: viewPack,
+    money: viewMoney, book: viewBook, idea: viewIdea, info: viewInfo,
+  }[STATE.tab] || viewPlan)();
+  renderFoot();
+}
+
+function renderFoot(){
+  const f = $('#foot');
+  const at = STATE.data?.fetchedAt ? new Date(STATE.data.fetchedAt) : null;
+  const stamp = at ? `${at.getMonth()+1}/${at.getDate()} ${String(at.getHours()).padStart(2,'0')}:${String(at.getMinutes()).padStart(2,'0')}` : '—';
+  f.innerHTML = `${STATE.data?.offline ? '📴 オフライン表示中・' : ''}最終更新 ${stamp}<br>`;
+  const b = el('button', null, '📊 スプレッドシートを開く');
+  b.onclick = () => window.open(`https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit`, '_blank');
+  f.appendChild(b);
+}
+
+/* ------------------------------- 読み込み ---------------------------------- */
+async function load(force){
+  try{
+    const sheets = await loadAllSheets();
+    const itin = sheets.itinerary;
+    if(!itin && !sheets.settings) throw new Error('シートを読めませんでした');
+
+    const settings = {};
+    (sheets.settings || []).forEach(r => {
+      const ks = allKeys(r);
+      const k = String(r[ks[0]]||'').trim();
+      const v = String(r[ks[1]]||'').trim();
+      if(k) settings[k] = v;
+    });
+
+    STATE.data = {
+      days: buildItinerary(itin || []),
+      settings,
+      members:    sheets.members    || [],
+      packing:    sheets.packing    || [],
+      budget:     sheets.budget     || [],
+      stay:       sheets.stay       || [],
+      transport:  sheets.transport  || [],
+      candidates: sheets.candidates || [],
+      info:       sheets.info       || [],
+      fetchedAt: Date.now(), offline:false,
+    };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(STATE.data));
+    if(force) toast('最新のしおりに更新しました');
+  }catch(e){
+    const cached = localStorage.getItem(CACHE_KEY);
+    if(cached){
+      STATE.data = JSON.parse(cached);
+      STATE.data.days.forEach(d => d.items.forEach(i => { i.t = i.t || null; }));
+      STATE.data.offline = true;
+      toast('オフラインです。保存済みのしおりを表示します');
+    }else{
+      $('#main').innerHTML = '';
+      $('#main').appendChild(el('div','empty',
+        `<span class="big">😢</span>スプレッドシートを読み込めませんでした。<br><br>
+         スプレッドシートの「共有」を<br><b>「リンクを知っている全員」→「閲覧者」</b><br>に設定してください。`));
+      $('#tabs').innerHTML = '';
+      return;
+    }
+  }
+  // 今日が旅程に含まれていれば、その日を最初に開く
+  const N = nowInfo();
+  const todayIdx = STATE.data.days.findIndex(d => d.key === N.key);
+  STATE.day = todayIdx >= 0 ? todayIdx : -1;
+  renderCover();
+  render();
+}
+
+$('#reload').onclick = async () => {
+  const b = $('#reload');
+  b.innerHTML = '<span class="spin">↻</span>';
+  await load(true);
+  b.innerHTML = '↻';
+};
+
+load(false);
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>
