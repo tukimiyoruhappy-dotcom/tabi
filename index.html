@@ -233,12 +233,27 @@ main{padding:16px 14px 90px;max-width:720px;margin:0 auto}
 .packhead .count.all{color:var(--accent)}
 .bar{height:5px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin:0 0 6px}
 .bar i{display:block;height:100%;background:var(--accent);border-radius:99px;transition:width .28s ease}
+/* 小分類の見出し */
+.cathead{
+  display:flex;align-items:baseline;gap:8px;
+  margin:16px 0 0;padding-top:13px;border-top:1px solid var(--line);
+  font-size:12px;font-weight:800;letter-spacing:.03em;color:var(--text-dim);
+}
+.cathead:first-of-type{margin-top:8px;padding-top:0;border-top:0}
+.cathead .nm{flex:1 1 auto}
+.cathead .n{
+  font-style:normal;font-size:11.5px;color:var(--text-faint);
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.cathead.all .nm{color:var(--accent)}
+.cathead.all .n{color:var(--accent)}
 .checkline{
   display:flex;align-items:center;gap:11px;padding:11px 0;
   border-top:1px solid var(--line);font-size:14.5px;
   width:100%;text-align:left;font-family:inherit;color:inherit;background:none;
 }
-.checkline:first-of-type{border-top:0}
+.checkline:first-of-type,
+.cathead + .checkline{border-top:0}
 .checkline:active{opacity:.55}
 .checkline .box{
   flex:0 0 auto;width:24px;height:24px;border-radius:7px;border:2px solid var(--line);
@@ -1208,6 +1223,34 @@ function saveChecks(o){
  * 共通の品物は入りません。
  *
  * 名前を変えたいときは、この2つの列を書き換えるだけです。 */
+/* 小分類のアイコン。分類名に含まれる言葉で選ぶので、
+ * 別の旅行で分類名を変えてもだいたい合います。 */
+const PACK_ICONS = [
+  [/貴重|現金|お金|財布|証明|チケット|移動|切符/, '🎫'],
+  [/電子|機器|娯楽|ゲーム|充電|カメラ/,           '🔌'],
+  [/衣類|服|着替|下着|パジャマ/,                  '👕'],
+  [/洗面|身だしなみ|化粧|メイク|洗顔|歯/,         '🪥'],
+  [/暑さ|寒さ|天候|防寒|日焼|雨|傘|虫/,           '☀️'],
+  [/薬|医療|救急|衛生/,                           '💊'],
+  [/飲食|食べ|飲み|おやつ|軽食/,                  '🍫'],
+  [/子ども|こども|キッズ|赤ちゃん/,               '🧸'],
+  [/書類|予約|保険/,                              '📄'],
+];
+function packIcon(name){
+  const hit = PACK_ICONS.find(([re]) => re.test(String(name || '')));
+  return hit ? hit[1] : '📦';
+}
+
+// 小分類の並び順は、シートに書いてある順をそのまま使う
+function packingCategories(rows){
+  const order = [];
+  rows.forEach(r => {
+    const c = String(firstOf(r, ['分類','カテゴリ','種別','区分','category'])).trim();
+    if(c && !order.includes(c)) order.push(c);
+  });
+  return order;
+}
+
 function packingConfig(rows){
   const groupNames = [], sharedNames = [];
   rows.forEach(r => {
@@ -1226,25 +1269,29 @@ function packingGroups(){
   const seen = new Map(), groups = new Map();
   groupNames.forEach(g => groups.set(g, []));   // 設定した順に並べる
 
-  const push = (bucket, name, num, note) => {
+  const push = (bucket, item) => {
     if(!groups.has(bucket)) groups.set(bucket, []);
-    const base = `${bucket}|${name}`;
+    const base = `${bucket}|${item.name}`;
     const n = (seen.get(base) || 0) + 1;
     seen.set(base, n);
-    groups.get(bucket).push({ id: n > 1 ? `${base}#${n}` : base, name, num, note });
+    groups.get(bucket).push({ ...item, id: n > 1 ? `${base}#${n}` : base });
   };
 
   rows.forEach(r => {
     const name = firstOf(r, ['品名','持ち物','品目','item','名称']);
     if(!name) return;
     const who  = String(firstOf(r, ['担当','だれ','who','担当者','持つ人'])).trim() || 'みんな';
-    const num  = firstOf(r, ['個数','数','qty']);
-    const note = firstOf(r, ['備考','メモ','note']);
+    const item = {
+      name,
+      cat:  String(firstOf(r, ['分類','カテゴリ','種別','区分','category'])).trim(),
+      num:  firstOf(r, ['個数','数','qty']),
+      note: firstOf(r, ['備考','メモ','note']),
+    };
 
     if(groupNames.length && sharedNames.includes(who)){
-      groupNames.forEach(g => push(g, name, num, note));   // 共通は各グループへ配る
+      groupNames.forEach(g => push(g, item));   // 共通は各グループへ配る
     }else{
-      push(who, name, num, note);                          // グループ本人・個人はそのまま
+      push(who, item);                          // グループ本人・個人はそのまま
     }
   });
 
@@ -1280,6 +1327,8 @@ function viewPack(){
     main.appendChild(bar);
   }
 
+  const catOrder = packingCategories(STATE.data.packing || []);
+
   people.filter(p => !STATE.who || STATE.who === p).forEach(who => {
     const items = groups.get(who);
     const p = el('div','panel');
@@ -1295,14 +1344,16 @@ function viewPack(){
     bar.appendChild(fill);
     p.appendChild(bar);
 
+    const updaters = [];
     const refresh = () => {
       const done = items.filter(i => checks[i.id]).length;
       count.textContent = `${done} / ${items.length}`;
       count.classList.toggle('all', done === items.length);
       fill.style.width = Math.round(done / items.length * 100) + '%';
+      updaters.forEach(f => f());
     };
 
-    items.forEach(item => {
+    const makeLine = item => {
       const line = el('button','checkline' + (checks[item.id] ? ' done' : ''));
       line.type = 'button';
       const box = el('div','box', checks[item.id] ? '✓' : '');
@@ -1319,8 +1370,35 @@ function viewPack(){
         box.textContent = checks[item.id] ? '✓' : '';
         refresh();
       };
-      p.appendChild(line);
-    });
+      return line;
+    };
+
+    if(catOrder.length){
+      // 小分類ごとにまとめる。シートに書いてある順に並べ、分類なしは最後
+      const byCat = new Map();
+      items.forEach(i => {
+        const c = i.cat || 'その他';
+        if(!byCat.has(c)) byCat.set(c, []);
+        byCat.get(c).push(i);
+      });
+      const rank = c => { const i = catOrder.indexOf(c); return i < 0 ? 9999 : i; };
+      [...byCat.keys()].sort((a,b) => rank(a) - rank(b)).forEach(c => {
+        const list = byCat.get(c);
+        const ch = el('div','cathead');
+        ch.appendChild(el('span','nm', `${packIcon(c)} ${esc(c)}`));
+        const n = el('span','n');
+        ch.appendChild(n);
+        p.appendChild(ch);
+        updaters.push(() => {
+          const d = list.filter(i => checks[i.id]).length;
+          n.textContent = `${d}/${list.length}`;
+          ch.classList.toggle('all', d === list.length);
+        });
+        list.forEach(item => p.appendChild(makeLine(item)));
+      });
+    }else{
+      items.forEach(item => p.appendChild(makeLine(item)));
+    }
 
     refresh();
     main.appendChild(p);
